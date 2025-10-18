@@ -1,0 +1,11 @@
+{
+  "wake.compiler.solc.remappings": [
+    "@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "chainlink-brownie-contracts/=lib/chainlink-brownie-contracts/",
+    "ds-test/=lib/forge-std/lib/ds-test/src/",
+    "forge-std/=lib/forge-std/src/",
+    "foundry-devops/=lib/foundry-devops/",
+    "openzeppelin-contracts/=lib/openzeppelin-contracts/"
+  ]
+}
