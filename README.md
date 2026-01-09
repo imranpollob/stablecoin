@@ -1,196 +1,112 @@
-# Foundry DeFi Stablecoin Protocol
+# Crypto Stablecoin
 
-This is a decentralized stablecoin protocol built with Foundry (Solidity) that maintains a 1:1 USD peg through overcollateralization with WETH and WBTC, inspired by MakerDAO's DSS system.
+A decentralized, overcollateralized, and algorithmically stablecoin protocol built with Foundry. This system maintains a 1:1 USD peg for the Stablecoin (DSC) using exogenous collateral (WETH & WBTC), inspired by the MakerDAO DSS architecture.
 
-## Table of Contents
-- [Architecture](#architecture)
-- [Overcollateralized Stablecoin System Features](#overcollateralized-stablecoin-system-features)
-- [Setup](#setup)
-- [Testing](#testing)
-- [Deployment](#deployment)
+This protocol creates a stablecoin (DSC) anchored to the US Dollar. The system ensures stability through:
+1.  **Overcollateralization**: All minted DSC is backed by more than 100% value in collateral (WETH/WBTC).
+2.  **Liquidation Mechanism**: Undercollateralized positions are liquidated to solvency, incentivizing liquidators with a bonus.
+3.  **Algorithmic Control**: No centralized entity controls the peg; it is maintained by market incentives and protocol rules.
 
-## Architecture
+## ✨ Key Features
 
-The protocol consists of two main contracts:
+-   **Dollar Pegged**: 1 DSC ≈ $1 USD.
+-   **Multi-Collateral**: Supports WETH and WBTC.
+-   **Overcollateralized**: Enforces a minimum collateralization ratio (default 200%).
+-   **Pausable (Emergency Stop)**: Owner can pause contract operations in emergencies.
+-   **Dynamic Parameters**: Risk parameters (Liquidation Threshold, Bonus, Health Factor) can be adjusted by governance without redeployment.
+-   **Oracle Integrated**: Uses Chainlink Data Feeds for secure, real-time pricing.
 
-1. **DSCEngine**: Core logic contract handling collateral deposits, stablecoin minting, liquidations, and health factor calculations
-2. **DecentralizedStableCoin (DSC)**: ERC20 token contract that represents the stablecoin
+## 🏗 Architecture
 
-## Features
+The system relies on two core smart contracts:
 
-### 1. Overcollateralization Ratio (200% requirement)
+### 1. `DSCEngine.sol` (The Core)
+The engine handles all logic:
+-   **Deposits**: Users deposit WETH/WBTC.
+-   **Minting**: Users mint DSC against their collateral.
+-   **Health Factor**: Calculates user solvency. If `Health Factor < 1`, the user is liquidatable.
+-   **Liquidations**: Allows third parties to pay off debt for undercollateralized users in exchange for discounted collateral.
 
-Maintains a strict 200%+ collateralization requirement to ensure system stability and protect against market volatility.
+### 2. `DecentralizedStableCoin.sol` (The Token)
+-   An ERC20 Burnable token owned by `DSCEngine`.
+-   Only `DSCEngine` has the authority to mint or burn tokens.
 
-**Code Implementation:**
-```solidity
-uint256 private constant LIQUIDATION_THRESHOLD = 50; // This means you need to be 200% over-collateralized
-uint256 private constant MIN_HEALTH_FACTOR = 1e18;
-```
+## 🛡 Security & Governance
 
-The `LIQUIDATION_THRESHOLD = 50` means 50% (or 0.5), meaning you must have collateral worth at least 2x the value of the DSC you're minting.
+The system facilitates "Solid MVP" security standards:
 
-### 2. Collateral Deposit and Minting Logic
+-   **Emergency Stop**: The `pause()` function halts `deposit`, `mint`, `redeem`, and `liquidate` actions if a bug or oracle failure is detected.
+-   **Dynamic Governance**: The contract owner (or DAO) can tune:
+    -   `Liquidation Threshold`: (Default 50%) Level at which collateral is valued.
+    -   `Liquidation Bonus`: (Default 10%) Reward for liquidators.
+    -   `Min Health Factor`: (Default 1e18) Minimum solvency ratio.
+-   **Reentrancy Protection**: All state-changing external functions use `nonReentrant`.
 
-Enables users to deposit supported collateral tokens and mint new stablecoins in a secure manner.
+## 🚀 Getting Started
 
-**Code Implementation:**
-```solidity
-function depositCollateral(
-    address tokenCollateralAddress,
-    uint256 amountCollateral
-) public moreThanZero(amountCollateral) nonReentrant isAllowedToken(tokenCollateralAddress) {
-    s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
-    emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
-    bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
-    if (!success) {
-        revert DSCEngine__TransferFailed();
-    }
-}
+### Prerequisites
+-   [Foundry](https://getfoundry.sh/)
+-   [Git](https://git-scm.com/)
 
-function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
-    s_DSCMinted[msg.sender] += amountDscToMint;
-    _revertIfHealthFactorIsBroken(msg.sender);
-    bool minted = i_dsc.mint(msg.sender, amountDscToMint);
-    if (minted != true) {
-        revert DSCEngine__MintFailed();
-    }
-}
-```
+### Installation
 
-### 3. Health Factor Calculation/Validation
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/imranpollob/stablecoin
+    cd stablecoin
+    ```
 
-Critical safety mechanism that validates collateralization ratios in real-time.
+2.  Install dependencies:
+    ```bash
+    forge install
+    ```
 
-**Code Implementation:**
-```solidity
-function _healthFactor(address user) private view returns (uint256) {
-    (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
-    return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
-}
+3.  Build the project:
+    ```bash
+    forge build
+    ```
 
-function _calculateHealthFactor(
-    uint256 totalDscMinted,
-    uint256 collateralValueInUsd
-) internal pure returns (uint256) {
-    if (totalDscMinted == 0) return type(uint256).max;
-    uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
-    return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
-}
-```
+## 🛠 Usage
 
-The health factor formula: `(collateralValueInUsd * 50%) / totalDscMinted` must be >= 1e18 to be valid.
-
-### 4. Collateral Value Calculation
-
-Converts collateral tokens to USD value using Chainlink price feeds with proper decimal adjustments.
-
-**Code Implementation:**
-```solidity
-function _getUsdValue(address token, uint256 amount) private view returns (uint256) {
-    AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-    (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
-    return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
-}
-```
-
-### 5. Price Feed Integration with Stale Check
-
-Prevents the use of outdated price data to maintain system security.
-
-**Code Implementation:**
-```solidity
-function staleCheckLatestRoundData(AggregatorV3Interface chainlinkFeed)
-    public view returns (uint80, int256, uint256, uint256, uint80) {
-    (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
-        chainlinkFeed.latestRoundData();
-
-    if (updatedAt == 0 || answeredInRound < roundId) {
-        revert OracleLib__StalePrice();
-    }
-    uint256 secondsSince = block.timestamp - updatedAt;
-    if (secondsSince > TIMEOUT) revert OracleLib__StalePrice();
-    return (roundId, answer, startedAt, updatedAt, answeredInRound);
-}
-```
-
-### 6. Automatic Health Factor Validation
-
-Automatically validates that all actions maintain safe collateralization levels.
-
-**Code Implementation:**
-```solidity
-function _revertIfHealthFactorIsBroken(address user) internal view {
-    uint256 userHealthFactor = _healthFactor(user);
-    if (userHealthFactor < MIN_HEALTH_FACTOR) {
-        revert DSCEngine__BreaksHealthFactor(userHealthFactor);
-    }
-}
-```
-
-This function is called after `depositCollateral`, `mintDsc`, and other operations to ensure the overcollateralization requirement is maintained.
-
-### 7. Stablecoin Minting with Access Control
-
-Secure minting mechanism that only allows the DSCEngine contract to create new DSC tokens.
-
-**Code Implementation:**
-```solidity
-function mint(address _to, uint256 _amount) external onlyOwner returns (bool) {
-    if (_to == address(0)) {
-        revert DecentralizedStableCoin__NotZeroAddress();
-    }
-    if (_amount <= 0) {
-        revert DecentralizedStableCoin__AmountMustBeMoreThanZero();
-    }
-    _mint(_to, _amount);
-    return true;
-}
-```
-
-The `onlyOwner` modifier ensures only the DSCEngine contract can mint new DSC tokens, ensuring every DSC is always backed by collateral.
-
-## Setup
-
-Make sure you have Foundry installed:
-
+### Local Development (Anvil)
+Start a local blockchain node:
 ```bash
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
+anvil
 ```
 
-Install dependencies:
-
+Deploy to local node:
 ```bash
-forge install
+forge script script/DeployDSC.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <PRIVATE_KEY>
 ```
 
-## Testing
+## 🧪 Testing
 
-Run the test suite:
+The project has comprehensive test coverage including unit tests and invariant (fuzz) tests.
 
+Run all tests:
 ```bash
 forge test
 ```
 
-## Deployment
+Run specific test file:
+```bash
+forge test --mt <TEST_FUNCTION_NAME>
+```
 
-Deploy to a testnet:
+Get test coverage report:
+```bash
+forge coverage
+```
+
+## 📦 Deployment
+
+### Deploy to Sepolia Testnet
+Create a `.env` file with `SEPOLIA_RPC_URL` and `PRIVATE_KEY`.
 
 ```bash
 make deploy ARGS="--network sepolia"
 ```
 
-## Security Features
+## 📄 License
 
-- Overcollateralization requirement (200%+)
-- Liquidation mechanism with 10% bonus
-- Health factor monitoring
-- Oracle staleness protection (3-hour timeout)
-- Reentrancy guards
-- Comprehensive validation on all operations
-
-## Supported Collateral
-
-- WETH (Wrapped Ether)
-- WBTC (Wrapped Bitcoin)
+This project is licensed under the MIT License.
