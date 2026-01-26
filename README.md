@@ -1,112 +1,122 @@
-# Crypto Stablecoin
+# Decentralized Stablecoin (DSC)
 
-A decentralized, overcollateralized, and algorithmically stablecoin protocol built with Foundry. This system maintains a 1:1 USD peg for the Stablecoin (DSC) using exogenous collateral (WETH & WBTC), inspired by the MakerDAO DSS architecture.
+A decentralized, algorithmic stablecoin pegged to USD and backed by cryptocurrency collateral. This project implements a MakerDAO-inspired protocol with enhanced security features and oracle protection.
 
-This protocol creates a stablecoin (DSC) anchored to the US Dollar. The system ensures stability through:
-1.  **Overcollateralization**: All minted DSC is backed by more than 100% value in collateral (WETH/WBTC).
-2.  **Liquidation Mechanism**: Undercollateralized positions are liquidated to solvency, incentivizing liquidators with a bonus.
-3.  **Algorithmic Control**: No centralized entity controls the peg; it is maintained by market incentives and protocol rules.
+## Overview
 
-## ✨ Key Features
+The Decentralized Stablecoin system maintains a 1:1 peg with the US Dollar through overcollateralization with crypto assets (WETH and WBTC). The protocol is designed to be minimal, transparent, and entirely algorithmic with no governance.
 
--   **Dollar Pegged**: 1 DSC ≈ $1 USD.
--   **Multi-Collateral**: Supports WETH and WBTC.
--   **Overcollateralized**: Enforces a minimum collateralization ratio (default 200%).
--   **Pausable (Emergency Stop)**: Owner can pause contract operations in emergencies.
--   **Dynamic Parameters**: Risk parameters (Liquidation Threshold, Bonus, Health Factor) can be adjusted by governance without redeployment.
--   **Oracle Integrated**: Uses Chainlink Data Feeds for secure, real-time pricing.
+## Core Features
 
-## 🏗 Architecture
+### Stablecoin Characteristics
+- **Exogenous Collateral**: Backed by external crypto assets (WETH, WBTC)
+- **Dollar Pegged**: Maintains 1 DSC = $1 USD value
+- **Algorithmic Stability**: Decentralized minting mechanism
+- **Overcollateralized**: Requires 200% collateralization ratio
 
-The system relies on two core smart contracts:
+### Protocol Features
 
-### 1. `DSCEngine.sol` (The Core)
-The engine handles all logic:
--   **Deposits**: Users deposit WETH/WBTC.
--   **Minting**: Users mint DSC against their collateral.
--   **Health Factor**: Calculates user solvency. If `Health Factor < 1`, the user is liquidatable.
--   **Liquidations**: Allows third parties to pay off debt for undercollateralized users in exchange for discounted collateral.
+#### Collateral Management
+- Deposit and withdraw supported collateral tokens (WETH/WBTC)
+- Real-time USD value tracking via Chainlink price feeds
+- Flexible collateral types with configurable price oracles
 
-### 2. `DecentralizedStableCoin.sol` (The Token)
--   An ERC20 Burnable token owned by `DSCEngine`.
--   Only `DSCEngine` has the authority to mint or burn tokens.
+#### Minting & Burning
+- Mint DSC tokens against deposited collateral
+- Burn DSC to reduce debt or close positions
+- Combined operations: deposit collateral and mint DSC in single transaction
+- Redeem collateral by burning DSC
 
-## 🛡 Security & Governance
+#### Liquidation System
+- Automated liquidation of undercollateralized positions
+- 10% liquidation bonus for liquidators
+- Partial liquidation support
+- Health factor monitoring to prevent insolvency
 
-The system facilitates "Solid MVP" security standards:
+#### Security Features
+- **Stale Price Protection**: Oracle library checks for stale Chainlink data (3-hour timeout)
+- **Pausable**: Emergency pause functionality for admin
+- **ReentrancyGuard**: Protection against reentrancy attacks
+- **Health Factor**: Continuous solvency monitoring
 
--   **Emergency Stop**: The `pause()` function halts `deposit`, `mint`, `redeem`, and `liquidate` actions if a bug or oracle failure is detected.
--   **Dynamic Governance**: The contract owner (or DAO) can tune:
-    -   `Liquidation Threshold`: (Default 50%) Level at which collateral is valued.
-    -   `Liquidation Bonus`: (Default 10%) Reward for liquidators.
-    -   `Min Health Factor`: (Default 1e18) Minimum solvency ratio.
--   **Reentrancy Protection**: All state-changing external functions use `nonReentrant`.
+#### Admin Controls
+- Adjustable liquidation threshold
+- Configurable liquidation bonus
+- Customizable minimum health factor
+- Pause/unpause protocol operations
 
-## 🚀 Getting Started
+## Technical Architecture
+
+### Smart Contracts
+
+- **DecentralizedStableCoin.sol**: ERC20 token contract with controlled minting/burning
+- **DSCEngine.sol**: Core protocol logic for collateral management, minting, and liquidations
+- **OracleLib.sol**: Chainlink oracle wrapper with staleness checks
+
+### Testing Suite
+
+- **Unit Tests**: Comprehensive tests for core functionality
+- **Fuzz Tests**: Invariant testing with continue-on-revert and fail-on-revert handlers
+- **Mock Contracts**: Complete suite of mocks for isolated testing
+
+## Technology Stack
+
+- **Solidity 0.8.19**: Smart contract development
+- **Foundry**: Development framework and testing
+- **OpenZeppelin**: Battle-tested contract libraries
+- **Chainlink**: Decentralized price oracles
+
+## Getting Started
 
 ### Prerequisites
--   [Foundry](https://getfoundry.sh/)
--   [Git](https://git-scm.com/)
+
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- Git
 
 ### Installation
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/imranpollob/stablecoin
-    cd stablecoin
-    ```
-
-2.  Install dependencies:
-    ```bash
-    forge install
-    ```
-
-3.  Build the project:
-    ```bash
-    forge build
-    ```
-
-## 🛠 Usage
-
-### Local Development (Anvil)
-Start a local blockchain node:
 ```bash
-anvil
+git clone <repository-url>
+cd stablecoin
+forge install
 ```
 
-Deploy to local node:
+### Build
+
 ```bash
-forge script script/DeployDSC.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --private-key <PRIVATE_KEY>
+forge build
 ```
 
-## 🧪 Testing
+### Test
 
-The project has comprehensive test coverage including unit tests and invariant (fuzz) tests.
-
-Run all tests:
 ```bash
+# Run all tests
 forge test
+
+# Run with verbosity
+forge test -vvv
+
+# Run specific test file
+forge test --match-path test/unit/DSCEngineTest.t.sol
 ```
 
-Run specific test file:
-```bash
-forge test --mt <TEST_FUNCTION_NAME>
-```
-
-Get test coverage report:
-```bash
-forge coverage
-```
-
-## 📦 Deployment
-
-### Deploy to Sepolia Testnet
-Create a `.env` file with `SEPOLIA_RPC_URL` and `PRIVATE_KEY`.
+### Deploy
 
 ```bash
-make deploy ARGS="--network sepolia"
+# Deploy to local network
+forge script script/DeployDSC.s.sol
+
+# Deploy to testnet
+forge script script/DeployDSC.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 ```
 
-## 📄 License
+## Security Considerations
 
-This project is licensed under the MIT License.
+- Always maintain overcollateralization to avoid liquidation
+- Monitor health factor regularly
+- Be aware of price volatility in collateral assets
+- Oracle staleness can freeze the protocol (by design)
+
+## License
+
+MIT
