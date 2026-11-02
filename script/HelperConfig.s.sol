@@ -5,12 +5,9 @@ import { MockV3Aggregator } from "../test/mocks/MockV3Aggregator.sol";
 import { Script } from "forge-std/Script.sol";
 import { ERC20Mock } from "../test/mocks/ERC20Mock.sol";
 
-/**
- * @title HelperConfig
- * @author Patrick Collins
- * @notice This contract provides configuration for different networks (Sepolia, Anvil).
- * It handles the deployment of mock contracts on Anvil and returns the appropriate addresses for each network.
- */
+/// @title Deployment configuration
+/// @notice Resolves collateral, price feeds, and the deployment signer for the active chain.
+/// @dev Local execution deploys mock assets and feeds. Sepolia addresses require validation before use.
 contract HelperConfig is Script {
     NetworkConfig public activeNetworkConfig;
 
@@ -59,7 +56,7 @@ contract HelperConfig is Script {
     /// @notice Retrieves or creates the configuration for Anvil network
     /// @return anvilNetworkConfig Network configuration for Anvil
     function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory anvilNetworkConfig) {
-        // Check to see if we set an active network config
+        // Reuse deployed mocks when a local configuration already exists.
         if (activeNetworkConfig.wethUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
         }

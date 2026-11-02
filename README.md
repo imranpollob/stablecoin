@@ -1,38 +1,22 @@
 # DSC Stablecoin
 
-**DeFi security research · Solidity · Foundry**
+**Overcollateralized stablecoin protocol · Solidity · Foundry**
 
 [![CI](https://github.com/imranpollob/stablecoin/actions/workflows/ci.yml/badge.svg)](https://github.com/imranpollob/stablecoin/actions/workflows/ci.yml)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.19-363636?logo=solidity)](foundry.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A security research case study of an overcollateralized stablecoin: manual review,
-executable regression tests, protocol hardening, and stateful invariant testing.
-The focus is on liquidation behavior, oracle assumptions, debt accounting, and
-privileged operations.
+DSC is a collateral-backed stablecoin protocol with permissionless liquidation,
+decimal-aware oracle pricing, explicit debt accounting, and configurable risk
+controls. Users deposit collateral, mint DSC, repay debt, and withdraw collateral
+subject to health-factor requirements.
 
-Built on the Cyfrin Updraft `foundry-defi-stablecoin` educational project by
-Patrick Collins. This repository extends that foundation with a documented
-self-review, decimal-aware pricing, emergency controls, delayed risk changes,
-and explicit bad-debt accounting. Findings are educational, self-assessed, and
-have not been independently adjudicated.
+The protocol includes emergency pause controls, delayed risk-parameter updates,
+and a bad-debt ledger. Its verification suite combines unit tests, security
+regressions, stateful invariant campaigns, and static analysis.
 
-**Status:** research prototype, tested locally with mocks. No independent audit
-or production-readiness claim. See [security assumptions](docs/threat-model.md).
-
-## Review the research
-
-| Start here | Evidence |
-| --- | --- |
-| Findings and remediation decisions | [Original self-review](audits/self-audit-v0.md) and [accounting follow-up](audits/review-2026-11.md) |
-| Executable security cases | [Regression tests](test/poc/) — one file per covered finding |
-| Properties and test boundaries | [Property specification](docs/properties.md) |
-| Trust and residual risk | [Threat model](docs/threat-model.md) |
-| Tool output and manual triage | [Static analysis](audits/static-analysis.md) |
-
-For a short review, start with **H-01** (liquidation and residual debt), **H-02**
-(collateral decimals), and **L-06** (an inherited token function bypassing debt
-accounting). Each has a focused test and an explanation of the resulting behavior.
+**Development status:** validated locally with mock assets and feeds. Independent
+security review and production deployment validation remain pending.
 
 ## Protocol overview
 
@@ -68,8 +52,8 @@ configs. [Architecture and formulas →](docs/architecture.md)
 
 ## Security findings
 
-Severity labels reflect this project's self-review. “Addressed” identifies the
-implemented mitigation and regression case; it does not imply exhaustive verification.
+The internal security review tracks the following resolved issues. Severity
+labels are assigned by the maintainer; each entry links to its regression test.
 
 | ID | Severity | Issue / hardening area | Evidence |
 | --- | --- | --- | --- |
@@ -89,6 +73,16 @@ implemented mitigation and regression case; it does not imply exhaustive verific
 These areas are addressed in the current implementation. **L-02**, uneconomical
 dust liquidation, remains open. Oracle failover, L2 sequencer handling, and an
 automated recapitalization mechanism are also outside the current implementation.
+
+## Security documentation
+
+| Document | Contents |
+| --- | --- |
+| [Security review](audits/security-review-v0.md) | Findings, impact, remediation decisions, and regression evidence |
+| [Accounting review](audits/review-2026-11.md) | Token burn access controls and debt-conservation verification |
+| [Property specification](docs/properties.md) | Tested invariants, campaign boundaries, and coverage gaps |
+| [Threat model](docs/threat-model.md) | Trust assumptions, supported token behavior, and residual risks |
+| [Static analysis](audits/static-analysis.md) | Reproduced detector output and manual triage |
 
 ## Run locally
 
@@ -112,7 +106,7 @@ Tests require no RPC endpoint, funded wallet, or API key. Initial dependency and
 compiler installation require network access.
 
 ```bash
-# Focused research cases
+# Security regression tests
 forge test --match-path 'test/poc/*.t.sol' -vv
 forge test --match-contract H01LiquidationUnderflowTest -vvvv
 forge test --match-contract L06DirectBurnTest -vvv
@@ -135,8 +129,8 @@ forge script script/DeployDSC.s.sol:DeployDSC
 ```
 
 For local Anvil deployment, run `anvil` in another terminal, then `make deploy-local`.
-The local script uses Anvil's public development key. The inherited Sepolia
-configuration is unverified and is not a supported deployment target for this case study.
+The local script uses Anvil's public development key. The Sepolia
+configuration is unverified and is not a supported deployment target.
 
 ## Verification approach
 
@@ -153,6 +147,21 @@ The [property specification](docs/properties.md) records model assumptions and g
 Historical tags `v0-vulnerable` and `v1-fixed` preserve earlier snapshots. Current
 tests use newer interfaces and are not a drop-in differential suite for those tags.
 
+## Development roadmap
+
+| Priority | Next milestone |
+| --- | --- |
+| Liquidation boundaries | Multi-collateral exhaustion, dust rounding, and zero-quote regressions |
+| Pricing properties | Fuzz supported decimal pairs and conservative conversion bounds |
+| Historical comparisons | A compatible harness with recorded vulnerable/fixed results |
+| Fork integration | Pinned-block tests against real collateral tokens and price feeds |
+| Stateful coverage | Compose pause, delayed risk changes, oracle outages, and time advancement |
+| Independent verification | Reproducible symbolic checks or a second fuzzing engine, followed by external review |
+
+Deployment readiness also requires feed-specific heartbeat configuration,
+automated bad-debt recovery, validated deployment addresses, and operational
+ownership and monitoring. These milestones remain open.
+
 ## Repository layout
 
 ```text
@@ -161,16 +170,13 @@ script/       Deployment and network/mock configuration
 test/unit/    Function-level behavior and access-control tests
 test/poc/     Security regression scenarios
 test/fuzz/    Stateful handlers and invariant campaigns
-audits/       Self-review reports and static-analysis evidence
+audits/       Security review reports and static-analysis evidence
 docs/         Architecture, threat model, and property specification
 ```
 
-[Roadmap](plan.md) · [Work log](WORKLOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+[Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 
-## Attribution and license
+## License
 
-Original educational foundation: [Cyfrin / Patrick Collins](https://github.com/Cyfrin/foundry-defi-stablecoin-cu).
-Original attribution is retained in the deployment scripts. Research extensions,
-reports, and regression tests are maintained by [Imran](https://github.com/imranpollob).
-
-[MIT](LICENSE). Third-party dependencies retain their own licenses and notices.
+[MIT](LICENSE). Source provenance and third-party credits are documented in
+[Attribution](ATTRIBUTION.md). Dependencies retain their own licenses and notices.

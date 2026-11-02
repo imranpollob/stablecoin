@@ -11,12 +11,6 @@
       "rev": "fc560fa34fa12a335a50c35d92e55a6628ca467c"
     }
   },
-  "lib/foundry-devops": {
-    "tag": {
-      "name": "0.1.0",
-      "rev": "5415faa72d362368cd5a044602c8c6a11bb497be"
-    }
-  },
   "lib/openzeppelin-contracts": {
     "tag": {
       "name": "v4.8.3",

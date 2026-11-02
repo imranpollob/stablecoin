@@ -16,7 +16,7 @@ Scope: production contracts, excluding results located in `lib/`, `test/`, and
 | **Total** | **18** |
 
 These are tool classifications, separate from the manually assigned severities
-in the self-review. They replace the previous unsupported claim that all detector
+in the security review. They replace the previous unsupported claim that all detector
 results were informational. Zero High results does not imply absence of defects.
 
 The [compact output snapshot](artifacts/slither-summary.json) contains each
@@ -53,7 +53,7 @@ comparison for new Medium or Low results.
 | `reentrancy-events` | Low / 1 | `depositCollateralAndMintDsc` | Composition delegates to individually guarded deposit/mint functions. Review event ordering and intermediate observations when changing this path. |
 | `timestamp` | Low / 2 | Risk execution; oracle validation | Deliberate use for a 48-hour delay and feed freshness. Timestamp boundary conditions remain relevant to tests and deployment assumptions. |
 | `solc-version` | Informational / 1 | Solidity 0.8.19 | Tool flags known compiler issues. Pinning makes builds reproducible; it does not resolve compiler bugs. The configured build uses the standard optimizer, without via-IR or a custom Yul optimizer sequence. Compiler upgrade/bug applicability review remains maintenance work. |
-| `naming-convention` | Informational / 1 | `s_DSCMinted` | Upstream naming retained; no accounting consequence. |
+| `naming-convention` | Informational / 1 | `s_DSCMinted` | Storage naming convention; no accounting consequence. |
 | `cache-array-length` | Optimization / 4 | Collateral iteration loops | Runtime arrays are constructor-fixed. Caching may reduce gas; scaling the collateral list also needs a gas/liveness review. |
 
 The reentrancy assessments rely on the current shared guard and supported token

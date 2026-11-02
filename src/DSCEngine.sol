@@ -11,10 +11,9 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { DecentralizedStableCoin } from "./DecentralizedStableCoin.sol";
 
 /// @title DSCEngine
-/// @notice Overcollateralized stablecoin engine hardened as a security-research case study.
-/// @dev The original educational implementation came from Cyfrin Updraft. This version adds
-///      decimal-aware accounting, asymmetric pause semantics, delayed risk changes, and explicit
-///      bad-debt accounting. It remains an experimental system and has not been externally audited.
+/// @notice Manages collateral, DSC issuance, liquidation, and protocol risk controls.
+/// @dev Uses decimal-aware pricing, asymmetric pause controls, delayed risk updates, and explicit
+///      bad-debt accounting. The engine must own the DSC token before processing user positions.
 contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
     using OracleLib for AggregatorV3Interface;
 

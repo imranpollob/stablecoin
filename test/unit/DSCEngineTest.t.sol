@@ -81,7 +81,7 @@ contract DSCEngineTest is StdCheats, Test {
 
     /// @notice Tests getTokenAmountFromUsd function with known values
     function testGetTokenAmountFromUsd() public {
-        // If we want $100 of WETH @ $2000/WETH, that would be 0.05 WETH
+        // At $2,000 per WETH, $100 converts to 0.05 WETH.
         uint256 expectedWeth = 0.05 ether;
         uint256 amountWeth = dsce.getTokenAmountFromUsd(weth, 100 ether);
         assertEq(amountWeth, expectedWeth);
@@ -368,17 +368,14 @@ contract DSCEngineTest is StdCheats, Test {
     function testProperlyReportsHealthFactor() public depositedCollateralAndMintedDsc {
         uint256 expectedHealthFactor = 100 ether;
         uint256 healthFactor = dsce.getHealthFactor(user);
-        // $100 minted with $20,000 collateral at 50% liquidation threshold
-        // means that we must have $200 collatareral at all times.
-        // 20,000 * 0.5 = 10,000
-        // 10,000 / 100 = 100 health factor
+        // $20,000 collateral at a 50% threshold against $100 debt gives a health factor of 100.
         assertEq(healthFactor, expectedHealthFactor);
     }
 
     /// @notice Tests that health factor can go below 1 when collateral value drops
     function testHealthFactorCanGoBelowOne() public depositedCollateralAndMintedDsc {
         int256 ethUsdUpdatedPrice = 18e8; // 1 ETH = $18
-        // Remember, we need $200 at all times if we have $100 of debt
+        // $100 debt requires at least $200 collateral at the default threshold.
 
         MockV3Aggregator(ethUsdPriceFeed).updateAnswer(ethUsdUpdatedPrice);
 
@@ -456,7 +453,7 @@ contract DSCEngineTest is StdCheats, Test {
         ERC20Mock(weth).approve(address(dsce), collateralToCover);
         dsce.depositCollateralAndMintDsc(weth, collateralToCover, amountToMint);
         dsc.approve(address(dsce), amountToMint);
-        dsce.liquidate(weth, user, amountToMint); // We are covering their whole debt
+        dsce.liquidate(weth, user, amountToMint); // Settle the full outstanding debt.
         vm.stopPrank();
         _;
     }
@@ -569,22 +566,4 @@ contract DSCEngineTest is StdCheats, Test {
         uint256 actualLiquidationPrecision = dsce.getLiquidationPrecision();
         assertEq(actualLiquidationPrecision, expectedLiquidationPrecision);
     }
-
-    // How do we adjust our invariant tests for this?
-    // function testInvariantBreaks() public depositedCollateralAndMintedDsc {
-    //     MockV3Aggregator(ethUsdPriceFeed).updateAnswer(0);
-
-    //     uint256 totalSupply = dsc.totalSupply();
-    //     uint256 wethDeposted = ERC20Mock(weth).balanceOf(address(dsce));
-    //     uint256 wbtcDeposited = ERC20Mock(wbtc).balanceOf(address(dsce));
-
-    //     uint256 wethValue = dsce.getUsdValue(weth, wethDeposted);
-    //     uint256 wbtcValue = dsce.getUsdValue(wbtc, wbtcDeposited);
-
-    //     console.log("wethValue: %s", wethValue);
-    //     console.log("wbtcValue: %s", wbtcValue);
-    //     console.log("totalSupply: %s", totalSupply);
-
-    //     assert(wethValue + wbtcValue >= totalSupply);
-    // }
 }

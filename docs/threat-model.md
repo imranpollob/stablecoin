@@ -2,7 +2,7 @@
 
 ## Scope and deployment assumptions
 
-The research scope covers the engine, DSC token, and oracle validation library.
+The security scope covers the engine, DSC token, and oracle validation library.
 Local tests use mocks. There is no demonstrated production deployment, external
 audit, proxy upgrade system, multisig deployment, or external timelock integration.
 Collateral and price feeds are fixed at construction.
@@ -70,4 +70,4 @@ Invariant campaigns use a bounded actor set and standard mock tokens. They do
 not prove profitable liquidation, continuous solvency, or peg stability. Fork
 testing, differential reproduction against historical interfaces, symbolic
 verification, and independent review remain future work. See the
-[property specification](properties.md) and [roadmap](../plan.md).
+[property specification](properties.md) and [roadmap](../README.md#development-roadmap).

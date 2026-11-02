@@ -1,6 +1,7 @@
 # Contributing
 
-Changes should improve the research evidence, protocol correctness, or reproducibility.
+Changes should improve protocol correctness, security, maintainability, or
+reproducibility.
 
 ## Development
 

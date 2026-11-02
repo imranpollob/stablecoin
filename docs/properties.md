@@ -70,4 +70,4 @@ Neither campaign models fee-on-transfer, rebasing, or arbitrary malicious tokens
 - Campaign composition with governance changes, pause, oracle outages, and callbacks.
 - Compatibility of the current regression suite with historical vulnerable interfaces.
 
-These gaps are tracked in the [roadmap](../plan.md) and [threat model](threat-model.md).
+These gaps are tracked in the [roadmap](../README.md#development-roadmap) and [threat model](threat-model.md).

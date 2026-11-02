@@ -6,14 +6,9 @@ import { HelperConfig } from "./HelperConfig.s.sol";
 import { DecentralizedStableCoin } from "../src/DecentralizedStableCoin.sol";
 import { DSCEngine } from "../src/DSCEngine.sol";
 
-/**
- * @title DeployDSC
- * @author Patrick Collins
- * @notice This contract deploys the Decentralized Stablecoin protocol including:
- * - DecentralizedStableCoin token
- * - DSCEngine core contract
- * - Proper ownership transfer from DSC to DSCEngine
- */
+/// @title DSC protocol deployment
+/// @notice Deploys the DSC token and collateral engine, then completes token ownership transfer.
+/// @dev The deployment signer initially owns the engine and manages its risk and emergency controls.
 contract DeployDSC is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAddresses;
@@ -23,7 +18,7 @@ contract DeployDSC is Script {
     /// @return dscEngine The deployed DSCEngine contract instance
     /// @return helperConfig The HelperConfig instance with network configuration
     function run() external returns (DecentralizedStableCoin, DSCEngine, HelperConfig) {
-        HelperConfig helperConfig = new HelperConfig(); // This comes with our mocks!
+        HelperConfig helperConfig = new HelperConfig();
 
         (address wethUsdPriceFeed, address wbtcUsdPriceFeed, address weth, address wbtc, uint256 deployerKey) =
             helperConfig.activeNetworkConfig();

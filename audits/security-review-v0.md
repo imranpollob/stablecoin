@@ -1,4 +1,4 @@
-# DSC Stablecoin: original self-review
+# DSC Stablecoin security review — baseline v0
 
 | Field | Scope |
 | --- | --- |
@@ -8,10 +8,9 @@
 | Severity | Self-assessed High / Medium / Low / Informational; no independent adjudication |
 | Current evidence | Tests linked below target the current interfaces; see [properties](../docs/properties.md) for campaign boundaries |
 
-This is an educational self-review of a codebase derived from Cyfrin Updraft and
-Patrick Collins. It is not an independent audit, a contest submission, or a claim
-that these issues are previously undisclosed. The report documents failure modes,
-implemented mitigations, and remaining assumptions.
+This internal review documents protocol failure modes, implemented mitigations,
+and remaining assumptions. Findings and severity ratings are maintained with
+executable regression evidence. Independent review has not been performed.
 
 The historical `v1-fixed` tag records an earlier remediation snapshot. It does
 not include every subsequent change. The current tests are not guaranteed to
@@ -129,4 +128,4 @@ records actual detector severities and manual triage; tool output alone is not a
 security conclusion.
 
 No fork campaign, symbolic proof, mutation score, independent audit, or economic
-solvency guarantee is claimed. The [roadmap](../plan.md) tracks those gaps.
+solvency guarantee is claimed. The [roadmap](../README.md#development-roadmap) tracks those gaps.
