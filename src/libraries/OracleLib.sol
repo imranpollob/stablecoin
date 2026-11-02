@@ -13,7 +13,10 @@ library OracleLib {
     uint256 internal constant DEFAULT_HEARTBEAT = 3 hours;
 
     /// @notice Reads a round and rejects incomplete, non-positive, future, or stale observations.
-    function staleCheckLatestRoundData(AggregatorV3Interface chainlinkFeed, uint256 heartbeat)
+    function staleCheckLatestRoundData(
+        AggregatorV3Interface chainlinkFeed,
+        uint256 heartbeat
+    )
         public
         view
         returns (uint80, int256, uint256, uint256, uint80)

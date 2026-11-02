@@ -1,118 +1,132 @@
-# Self-Audit: DSC Stablecoin (`v0-vulnerable` → fixed)
+# DSC Stablecoin: original self-review
 
-| Field | Value |
-|---|---|
-| Scope | `src/DSCEngine.sol`, `src/DecentralizedStableCoin.sol`, `src/libraries/OracleLib.sol` at [`5525018`](https://github.com/imranpollob/stablecoin/commit/5525018b6568013b6aae0491fdb3d0eeea99a202) (tag `v0-vulnerable`) |
-| Methodology | Manual review, Slither, Foundry unit + invariant tests, per-finding PoCs |
-| Risk scale | Code4rena/CodeHawks style: High / Medium / Low / Informational |
-| Status | All Highs and Mediums fixed; L-02 and L2-sequencer noted as accepted/future work |
+| Field | Scope |
+| --- | --- |
+| Baseline | [`5525018`](https://github.com/imranpollob/stablecoin/commit/5525018b6568013b6aae0491fdb3d0eeea99a202), tag `v0-vulnerable` |
+| Contracts | `DSCEngine.sol`, `DecentralizedStableCoin.sol`, `libraries/OracleLib.sol` |
+| Approach | Manual review, targeted Foundry regressions, unit tests, and static analysis |
+| Severity | Self-assessed High / Medium / Low / Informational; no independent adjudication |
+| Current evidence | Tests linked below target the current interfaces; see [properties](../docs/properties.md) for campaign boundaries |
 
-Original codebase: Cyfrin Updraft `foundry-defi-stablecoin` course project
-(author Patrick Collins), itself the subject of CodeHawks First Flight
-`2023-07-foundry-defi-stablecoin`. Findings below are my own; where they
-overlap published contest results is noted per finding.
+This is an educational self-review of a codebase derived from Cyfrin Updraft and
+Patrick Collins. It is not an independent audit, a contest submission, or a claim
+that these issues are previously undisclosed. The report documents failure modes,
+implemented mitigations, and remaining assumptions.
 
-## Findings
+The historical `v1-fixed` tag records an earlier remediation snapshot. It does
+not include every subsequent change. The current tests are not guaranteed to
+compile against the baseline; a compatible differential harness is future work.
 
-### H-01 — Liquidation bricks below (100 + bonus)% collateralization [High, fixed]
+## High severity
 
-`liquidate` paid the liquidator `debtToCover + bonus` out of the user's balance
-with an unchecked subtraction, and unconditionally required the health factor to
-improve. Once collateral fell below debt-plus-bonus, every liquidation reverted
-and the bad debt could never be cleared.
-*Fix:* cap the seizure at the user's balance (bonus shrinks to what exists);
-write any remaining debt to `s_badDebt` with `BadDebtRealized`; skip the
-improvement check when a collateral type is exhausted so follow-up liquidations
-make progress. *PoC:* `test/poc/H01_LiquidationUnderflow.t.sol`.
+### H-01 — Insufficient collateral can block liquidation
 
-### H-02 — Price math assumes 18-decimal tokens and 8-decimal feeds [High, fixed]
+**Trigger and impact.** The requested collateral seizure includes a bonus. When
+it exceeds the borrower's balance, checked subtraction reverts. An unconditional
+health-factor improvement requirement can also prevent progress on deeply
+underwater positions, delaying settlement when debt is already distressed.
 
-Hard-coded `ADDITIONAL_FEED_PRECISION = 1e10` mispriced any collateral whose
-decimals differ (8-decimal WBTC valued at 1e-10 of reality). The mocks hid this
-by using 18 decimals everywhere.
-*Fix:* store `tokenDecimals`/`feedDecimals` per collateral at allowlisting and
-normalize both to 18. *PoC:* `test/poc/H02_CollateralDecimals.t.sol` (8-decimal
-mock valued exactly).
+**Mitigation.** Cap the seizure at the selected balance and cover only its
+bonus-discounted value. If all collateral is exhausted, move remaining debt to
+an explicit bad-debt ledger. If only one type is exhausted, permit subsequent
+settlement without requiring this step to improve health.
 
-### M-01 — Pause traps users and blocks liquidations [Medium, fixed]
+**Evidence.** [H-01 regression](../test/poc/H01_LiquidationUnderflow.t.sol):
+10 ETH backs 10,000 DSC, then the price falls from $2,000 to $1,050. Settlement
+exhausts collateral and preserves the debt/supply accounting identity.
 
-`whenNotPaused` on deposit, repay, and liquidation let prices move during a
-pause while nobody could react; MEV bots harvested users at `unpause`.
-*Fix:* asymmetric pause — only `mintDsc` and collateral withdrawal stop;
-`depositCollateral`, `burnDsc`, and `liquidate` stay open. Unpause is
-owner-only. *PoC:* `test/poc/M01_AsymmetricPause.t.sol`.
+**Residual risk.** Recording bad debt does not eliminate the loss. Dust rounding,
+oracle failure, liquidity, gas costs, and liquidator account checks can still
+prevent settlement. This is not a universal liquidation-liveness proof.
 
-### M-02 — Instant, unbounded risk parameters [Medium, fixed]
+### H-02 — Fixed decimal assumptions misprice collateral
 
-The owner could set threshold to 0/1 (brick or liquidate everyone) or bonus
-combinations that make liquidation unprofitable, in one transaction.
-*Fix:* 48h schedule→execute timelock, hard bounds (threshold [10,80], bonus ≤
-20, minHF in [1e18, 2e18]) plus a threshold/bonus coupling check.
-*PoC:* `test/poc/M02_RiskTimelock.t.sol`.
+**Trigger and impact.** Treating token amounts as 18 decimals and feed answers as
+8 decimals undervalues an 8-decimal token by a factor of `1e10`. Mocks with only
+18-decimal token balances hide the mismatch.
 
-### M-03 — Oracle validation gaps [Medium, fixed]
+**Mitigation.** Cache token/feed decimals at construction and normalize USD
+values. Reject token/feed decimals above 18.
 
-Negative/zero answers cast to `uint256` (a negative wraps into a huge price);
-single global 3h timeout; no round-completeness check; no sequencer check.
-*Fix:* `require(answer > 0)`, per-feed heartbeat, `answeredInRound < roundId`
-rejection. Sequencer uptime check deferred to L2 deployment.
-*PoC:* `test/poc/M03_OracleValidation.t.sol` (zero + negative cases).
+**Evidence.** [H-02 regression](../test/poc/H02_CollateralDecimals.t.sol):
+`1e8` units of an 8-decimal token at $30,000 is worth `30_000e18`, and conversion
+back returns `1e8`. Broader decimal-pair and rounding exploration remains open.
 
-### M-04 — One stale feed freezes the whole protocol [Medium, fixed]
+## Medium severity
 
-`getAccountCollateralValue` queried every feed even for zero balances, so an
-ETH-only user was frozen by a stale WBTC feed.
-*Fix:* skip zero-balance tokens before touching the oracle.
-*PoC:* `test/poc/M04_UnusedStaleFeed.t.sol`.
+### M-01 — Symmetric pause blocks protective actions
 
-### L-01 — Missing `nonReentrant` on two settlement paths [Low, fixed]
+Pausing deposits, repayment, and liquidation prevents users from reducing debt
+while collateral prices continue to move. The current pause blocks minting and
+withdrawals while preserving standalone deposits, repayment, and liquidation.
+Other checks still apply, and withdrawals remain blocked after repayment.
 
-`redeemCollateralForDsc` and `burnDsc` lacked the guard (harmless with plain
-ERC20s, exploitable with hook tokens).
-*Fix:* `nonReentrant` on all settlement entry points.
-*PoC:* `test/poc/L01_ReentrancyGuard.t.sol` (callback token; asserts the guard's
-revert reason so the test fails on unguarded code).
+Evidence: [M-01 regression](../test/poc/M01_AsymmetricPause.t.sol) and
+[pause/access-control unit tests](../test/unit/DSCEnginePausableTest.t.sol).
 
-### L-02 — No minimum debt or close factor [Low, accepted]
+### M-02 — Immediate and unbounded risk changes
 
-Dust positions may cost more to liquidate than the bonus pays.
-*Decision:* accepted. Liquidation is permissionless and the bonus scales with
-size; a `MIN_DEBT` floor would add mint-path griefing surface. Revisit with a
-stability pool.
+An owner could change liquidation terms without notice or safe bounds. The
+engine now enforces a 48-hour schedule/execute delay, tuple matching, cancellation,
+threshold `[10,80]`, bonus `[0,20]`, minimum factor `[1e18,2e18]`, and a
+threshold/bonus coupling check.
 
-### L-03 — Constructor accepted duplicates/zero addresses [Low, fixed]
+Evidence: [M-02 regression](../test/poc/M02_RiskTimelock.t.sol) and
+[control unit tests](../test/unit/DSCEnginePausableTest.t.sol). Owner trust remains;
+the delay does not guarantee users can exit during pauses or oracle failures.
 
-A duplicate token double-counted collateral. Now rejected (`ZeroAddress`,
-`DuplicateCollateral`). *PoC:* `test/poc/L03_ConstructorValidation.t.sol`.
+### M-03 — Oracle observations are insufficiently validated
 
-### L-04 — Fee-on-transfer credited by nominal amount [Low, fixed]
+Non-positive prices and incomplete observations must not enter collateral math.
+`OracleLib` rejects non-positive prices, incomplete rounds, zero/future timestamps,
+and observations older than the supplied heartbeat.
 
-Now credits the measured balance delta (`balanceAfter - balanceBefore`).
-*PoC:* `test/poc/L04_FeeOnTransferAccounting.t.sol`.
+Evidence: [M-03 regressions](../test/poc/M03_OracleValidation.t.sol) assert exact
+errors for zero and negative answers; [oracle tests](../test/unit/OracleLibTest.t.sol)
+exercise stale and future timestamps. Each config stores a heartbeat but currently
+receives the same three-hour default. No setter, sequencer check, fallback oracle,
+or price-deviation circuit breaker is implemented.
 
-### L-05 — Single-step ownership [Low, fixed]
+### M-04 — Unused stale feeds block unrelated accounts
 
-`Ownable2Step` on engine and DSC. *PoC:* `test/poc/L05_TwoStepOwnership.t.sol`.
+Querying every feed before checking the account's token balance lets an unused
+stale feed block valuation. Current valuation skips zero-balance tokens.
 
-### Informational (fixed)
+Evidence: [M-04 regression](../test/poc/M04_UnusedStaleFeed.t.sol). A stale feed
+for collateral actually held by the account can still block health checks.
 
-I-01 divide-before-multiply → `Math.mulDiv` with protocol-favoring rounding
-(`I01_HealthFactorPrecision`); I-02 missing events → `DscMinted`/`DscBurned`/
-`Liquidated`/`BadDebt*` events, `amount` un-indexed; I-03 dead code (`_amount
-<= 0` on `uint256`, unused `getTimeout` param); I-04 README/NatSpec rewritten
-to describe the system as built.
+## Low severity
 
-## Invariant results
+| ID | Observation | Current treatment and evidence |
+| --- | --- | --- |
+| L-01 | Inconsistent settlement reentrancy guards | Guards applied to settlement paths; [callback regression](../test/poc/L01_ReentrancyGuard.t.sol) pins the guard error. This is defense-in-depth evidence, not a demonstrated theft exploit. |
+| L-02 | Dust debt may be uneconomical to liquidate | Open design issue: no minimum debt or close-factor policy; permissionless liquidation alone does not ensure profitability. |
+| L-03 | Constructor accepts duplicate/zero addresses | Reject zero addresses and duplicate tokens; [regression](../test/poc/L03_ConstructorValidation.t.sol) exercises duplicates. |
+| L-04 | Nominal deposit credits ignore transfer fees | Credit measured balance delta; [regression](../test/poc/L04_FeeOnTransferAccounting.t.sol) checks a 10% ingress fee. Full support for arbitrary fee/rebasing tokens is not claimed. |
+| L-05 | Single-step ownership can strand control | Two-step ownership on engine and DSC; [regression](../test/poc/L05_TwoStepOwnership.t.sol) exercises acceptance. |
 
-`forge test` (Foundry 1.4.1): all suites pass on the fixed code, including the
-solvency invariant (`collateral value ≥ total DSC`) and non-reverting getters
-under both fail-on-revert and continue-on-revert handlers. The H-01 and M-04
-properties fail on `v0-vulnerable` by construction (underflow revert; stale-feed
-revert on zero balances) and pass after the fix.
+A later review identified **L-06**, inherited `burnFrom` bypassing engine debt
+accounting. It is documented separately in the [accounting follow-up](review-2026-11.md).
 
-## Limitations
+## Informational observations
 
-Unaudited experimental code; no external review. No insurance fund backing
-`s_badDebt`; no fallback oracle; no L2 sequencer handling. Fork tests against
-real feeds/WBTC, Medusa/Echidna campaigns, and Halmos symbolic checks are
-tracked as follow-ups in `plan.md`.
+- **I-01:** health-factor precision and conservative rounding. Current
+  [regression](../test/poc/I01_HealthFactorPrecision.t.sol) checks a fractional
+  example and the zero-debt sentinel; it is not an exhaustive error-bound proof.
+- **I-02:** settlement observability. The engine emits deposit, redemption,
+  mint, burn, liquidation, and bad-debt events.
+- **I-03:** redundant unsigned-value checks and legacy helper cleanup.
+- **I-04:** documentation must reflect actual governance, collateral, and oracle
+  capabilities. The current README, architecture, and threat model describe
+  implemented behavior and distinguish future work.
+
+## Verification and limitations
+
+Current execution results and test commands are recorded in the
+[accounting follow-up](review-2026-11.md). The [property specification](../docs/properties.md)
+defines the bounded campaigns. The [static-analysis report](static-analysis.md)
+records actual detector severities and manual triage; tool output alone is not a
+security conclusion.
+
+No fork campaign, symbolic proof, mutation score, independent audit, or economic
+solvency guarantee is claimed. The [roadmap](../plan.md) tracks those gaps.

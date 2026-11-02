@@ -157,7 +157,11 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
     }
 
     /// @notice Queue a protocol-wide risk change behind a 48-hour review window.
-    function scheduleRiskParameters(uint256 newThreshold, uint256 newBonus, uint256 newMinHealthFactor)
+    function scheduleRiskParameters(
+        uint256 newThreshold,
+        uint256 newBonus,
+        uint256 newMinHealthFactor
+    )
         external
         onlyOwner
     {
@@ -176,7 +180,11 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         emit RiskChangeCancelled(changeHash);
     }
 
-    function executeRiskParameters(uint256 newThreshold, uint256 newBonus, uint256 newMinHealthFactor)
+    function executeRiskParameters(
+        uint256 newThreshold,
+        uint256 newBonus,
+        uint256 newMinHealthFactor
+    )
         external
         onlyOwner
     {
@@ -221,7 +229,11 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         mintDsc(amountDscToMint);
     }
 
-    function redeemCollateralForDsc(address tokenCollateralAddress, uint256 amountCollateral, uint256 amountDscToBurn)
+    function redeemCollateralForDsc(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountDscToBurn
+    )
         external
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
@@ -233,7 +245,10 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
-    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+    function redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    )
         external
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
@@ -260,7 +275,11 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
     }
 
     /// @notice Liquidation remains available during a pause to prevent hidden insolvency.
-    function liquidate(address collateral, address user, uint256 debtToCover)
+    function liquidate(
+        address collateral,
+        address user,
+        uint256 debtToCover
+    )
         external
         isAllowedToken(collateral)
         moreThanZero(debtToCover)
@@ -294,7 +313,10 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
     }
 
     /// @notice Credits the measured balance delta, not a caller-supplied nominal amount.
-    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+    function depositCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    )
         public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
@@ -330,7 +352,11 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         emit DscBurned(dscFrom, onBehalfOf, amount);
     }
 
-    function _liquidationQuote(address collateral, address user, uint256 requestedDebt)
+    function _liquidationQuote(
+        address collateral,
+        address user,
+        uint256 requestedDebt
+    )
         private
         view
         returns (uint256 actualDebtCovered, uint256 collateralSeized)
@@ -403,7 +429,10 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         return Math.mulDiv(amount, normalizedPrice, 10 ** config.tokenDecimals);
     }
 
-    function _calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
+    function _calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    )
         internal
         pure
         returns (uint256)
@@ -437,7 +466,10 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
     // Views
     // -------------------------------------------------------------------------
 
-    function calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
+    function calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    )
         external
         pure
         returns (uint256)
@@ -470,7 +502,10 @@ contract DSCEngine is ReentrancyGuard, Pausable, Ownable2Step {
         }
     }
 
-    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei)
+    function getTokenAmountFromUsd(
+        address token,
+        uint256 usdAmountInWei
+    )
         public
         view
         isAllowedToken(token)

@@ -1,136 +1,97 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import { Test } from "forge-std/Test.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ERC20Mock } from "../../mocks/ERC20Mock.sol";
-import { MockV3Aggregator } from "../../mocks/MockV3Aggregator.sol";
 import { DSCEngine } from "../../../src/DSCEngine.sol";
 import { DecentralizedStableCoin } from "../../../src/DecentralizedStableCoin.sol";
 
-/**
- * @title StopOnRevertHandler
- * @notice Handler contract for fuzz testing with stop-on-revert behavior
- * @dev Provides functions to interact with the protocol during invariant testing
- */
+/// @notice Valid user actions at fixed prices. Every targeted call must succeed.
 contract StopOnRevertHandler is Test {
-    DSCEngine public dscEngine;
-    DecentralizedStableCoin public dsc;
-    MockV3Aggregator public ethUsdPriceFeed;
-    MockV3Aggregator public btcUsdPriceFeed;
-    ERC20Mock public weth;
-    ERC20Mock public wbtc;
+    DSCEngine public immutable engine;
+    DecentralizedStableCoin public immutable dsc;
+    address public constant LIQUIDATOR = address(0x2000);
+    address[] internal actors;
+    address[] internal tokens;
 
-    /// @notice Maximum deposit size for fuzz testing
-    uint96 public constant MAX_DEPOSIT_SIZE = type(uint96).max;
-
-    /// @notice Constructor to initialize the handler with protocol contracts
-    /// @param _dscEngine The DSCEngine contract instance
-    /// @param _dsc The DecentralizedStableCoin contract instance
-    constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
-        dscEngine = _dscEngine;
-        dsc = _dsc;
-
-        address[] memory collateralTokens = dscEngine.getCollateralTokens();
-        weth = ERC20Mock(collateralTokens[0]);
-        wbtc = ERC20Mock(collateralTokens[1]);
-
-        ethUsdPriceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(weth)));
-        btcUsdPriceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(wbtc)));
-    }
-
-    /// @notice Mint and deposit collateral to the protocol
-    /// @param collateralSeed Seed value to determine which collateral type to use
-    /// @param amountCollateral Amount of collateral to deposit
-    function mintAndDepositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
-        // must be more than 0
-        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE);
-        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
-
-        vm.startPrank(msg.sender);
-        collateral.mint(msg.sender, amountCollateral);
-        collateral.approve(address(dscEngine), amountCollateral);
-        dscEngine.depositCollateral(address(collateral), amountCollateral);
-        vm.stopPrank();
-    }
-
-    /// @notice Redeem collateral from the protocol
-    /// @param collateralSeed Seed value to determine which collateral type to use
-    /// @param amountCollateral Amount of collateral to redeem
-    function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
-        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
-        uint256 maxCollateral = dscEngine.getCollateralBalanceOfUser(msg.sender, address(collateral));
-
-        amountCollateral = bound(amountCollateral, 0, maxCollateral);
-        //vm.prank(msg.sender);
-        if (amountCollateral == 0) {
-            return;
+    constructor(DSCEngine engine_, DecentralizedStableCoin dsc_) {
+        engine = engine_;
+        dsc = dsc_;
+        tokens = engine_.getCollateralTokens();
+        for (uint256 i; i < 4; ++i) {
+            address actor = address(uint160(0x1000 + i));
+            actors.push(actor);
+            // Start with live debt so assertions cannot pass on an empty system.
+            ERC20Mock(tokens[0]).mint(actor, 10 ether);
+            vm.startPrank(actor);
+            ERC20Mock(tokens[0]).approve(address(engine), type(uint256).max);
+            ERC20Mock(tokens[1]).approve(address(engine), type(uint256).max);
+            dsc.approve(address(engine), type(uint256).max);
+            engine.depositCollateralAndMintDsc(tokens[0], 10 ether, 1000 ether);
+            dsc.transfer(LIQUIDATOR, 250 ether);
+            vm.stopPrank();
         }
-        vm.prank(msg.sender);
-        dscEngine.redeemCollateral(address(collateral), amountCollateral);
+        vm.prank(LIQUIDATOR);
+        dsc.approve(address(engine), type(uint256).max);
     }
 
-    /// @notice Burn DSC tokens
-    /// @param amountDsc Amount of DSC to burn
-    function burnDsc(uint256 amountDsc) public {
-        // Must burn more than 0
-        amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
-        if (amountDsc == 0) {
-            return;
+    function getActors() external view returns (address[] memory) {
+        return actors;
+    }
+
+    function deposit(uint256 actorSeed, uint256 tokenSeed, uint256 amount) public {
+        address actor = actors[actorSeed % actors.length];
+        ERC20Mock token = ERC20Mock(tokens[tokenSeed % tokens.length]);
+        amount = bound(amount, 1, 100 ether);
+        token.mint(actor, amount);
+        vm.prank(actor);
+        engine.depositCollateral(address(token), amount);
+    }
+
+    function mint(uint256 actorSeed, uint256 amount) public virtual {
+        address actor = actors[actorSeed % actors.length];
+        (uint256 debt, uint256 value) = engine.getAccountInformation(actor);
+        uint256 limit = value / 2; // Default threshold (50%) and minHF (1e18).
+        if (limit <= debt) return;
+        amount = bound(amount, 1, limit - debt);
+        vm.prank(actor);
+        engine.mintDsc(amount);
+    }
+
+    function repay(uint256 actorSeed, uint256 amount) public virtual {
+        address actor = actors[actorSeed % actors.length];
+        (uint256 debt,) = engine.getAccountInformation(actor);
+        uint256 available = Math.min(debt, dsc.balanceOf(actor));
+        if (available == 0) return;
+        amount = bound(amount, 1, available);
+        vm.prank(actor);
+        engine.burnDsc(amount);
+    }
+
+    function redeem(uint256 actorSeed, uint256 tokenSeed, uint256 amount) public virtual {
+        address actor = actors[actorSeed % actors.length];
+        address token = tokens[tokenSeed % tokens.length];
+        (uint256 debt, uint256 value) = engine.getAccountInformation(actor);
+        uint256 balance = engine.getCollateralBalanceOfUser(actor, token);
+        if (balance == 0 || value <= debt * 2) return;
+        // Leave a $1 rounding buffer when debt is outstanding.
+        uint256 spare = value - debt * 2;
+        if (debt != 0) {
+            if (spare <= 1 ether) return;
+            spare -= 1 ether;
         }
-        vm.startPrank(msg.sender);
-        dsc.approve(address(dscEngine), amountDsc);
-        dscEngine.burnDsc(amountDsc);
-        vm.stopPrank();
+        uint256 available = Math.min(balance, engine.getTokenAmountFromUsd(token, spare));
+        if (available == 0) return;
+        amount = bound(amount, 1, available);
+        vm.prank(actor);
+        engine.redeemCollateral(token, amount);
     }
 
-    /// @notice Liquidate an undercollateralized user
-    /// @param collateralSeed Seed value to determine which collateral type to liquidate
-    /// @param userToBeLiquidated Address of the user to be liquidated
-    /// @param debtToCover Amount of debt to cover during liquidation
-    function liquidate(uint256 collateralSeed, address userToBeLiquidated, uint256 debtToCover) public {
-        uint256 minHealthFactor = dscEngine.getMinHealthFactor();
-        uint256 userHealthFactor = dscEngine.getHealthFactor(userToBeLiquidated);
-        if (userHealthFactor >= minHealthFactor) {
-            return;
-        }
-        debtToCover = bound(debtToCover, 1, uint256(type(uint96).max));
-        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
-        dscEngine.liquidate(address(collateral), userToBeLiquidated, debtToCover);
-    }
-
-    /// @notice Transfer DSC tokens
-    /// @param amountDsc Amount of DSC to transfer
-    /// @param to Transfer recipient address
-    function transferDsc(uint256 amountDsc, address to) public {
-        if (to == address(0)) {
-            to = address(1);
-        }
-        amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
-        vm.prank(msg.sender);
-        assertTrue(dsc.transfer(to, amountDsc));
-    }
-
-    /// @notice Update the price of collateral tokens
-    /// @param newPrice New price value for the collateral
-    /// @param collateralSeed Seed value to determine which collateral type to update
-    function updateCollateralPrice(uint96 newPrice, uint256 collateralSeed) public {
-        newPrice = uint96(bound(newPrice, 1, type(uint96).max));
-        int256 intNewPrice = int256(uint256(newPrice));
-        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
-        MockV3Aggregator priceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(collateral)));
-
-        priceFeed.updateAnswer(intNewPrice);
-    }
-
-    /// @notice Helper function to select collateral based on seed
-    /// @param collateralSeed Seed value to determine which collateral type to return
-    /// @return The selected collateral token
-    function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
-        if (collateralSeed % 2 == 0) {
-            return weth;
-        } else {
-            return wbtc;
-        }
+    function transfer(uint256 actorSeed, uint256 recipientSeed, uint256 amount) public {
+        address actor = actors[actorSeed % actors.length];
+        amount = bound(amount, 0, dsc.balanceOf(actor));
+        vm.prank(actor);
+        assertTrue(dsc.transfer(actors[recipientSeed % actors.length], amount));
     }
 }

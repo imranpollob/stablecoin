@@ -1,18 +1,17 @@
-# NOTE: lib/ intentionally NOT ignored — submodule gitlinks are committed so a
-# fresh clone builds (see Phase 0 of plan.md).
-
-# Compiler files
+# Foundry compiler output, fuzz failures, and transaction artifacts
 cache/
 out/
+broadcast/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
-/broadcast
-
-# Docs are part of the deliverable (properties, threat model, architecture).
-
-# Dotenv file
+# Local secrets (tests do not require an environment file)
 .env
+.env.*
+!.env.example
+
+# Generated reports
+coverage-report.txt
+lcov.info
+slither-report.json
+
+# OS files
 .DS_Store

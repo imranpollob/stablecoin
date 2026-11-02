@@ -1,81 +1,106 @@
 # Architecture
 
-## Contracts
+## Contracts and authority
 
-- **`src/DSCEngine.sol`** — all protocol logic: collateral custody, mint/burn,
-  health-factor checks, liquidation, pause, timelocked risk changes, bad-debt
-  ledger. Owns the DSC token (`Ownable2Step` on both sides).
-- **`src/DecentralizedStableCoin.sol`** — plain ERC20 with owner-gated
-  `mint`/`burn`. The engine is its owner after `acceptDscOwnership`.
-- **`src/libraries/OracleLib.sol`** — Chainlink guard: rejects non-positive
-  answers, incomplete rounds, future timestamps, and per-feed stale data.
+| Contract | Responsibility |
+| --- | --- |
+| `DSCEngine` | Collateral custody, debt accounting, health checks, liquidation, emergency controls, and delayed risk updates |
+| `DecentralizedStableCoin` | ERC20 debt token; `mint`, `burn`, and `burnFrom` are owner-only |
+| `OracleLib` | Validates positive answers, round completeness, timestamps, and freshness |
 
-## Collateral bookkeeping
+The deployment script nominates the engine as DSC owner and calls
+`acceptDscOwnership`. The engine owner is the deployer; the script does not
+install a multisig. Engine ownership uses two-step acceptance. Contracts are
+not upgradeable.
 
-Each allowlisted token has a `CollateralConfig`:
+Collateral and feed addresses are fixed by constructor arrays. Each unique
+token has a `CollateralConfig` containing its feed, heartbeat, threshold, bonus,
+token/feed decimals, and enabled flag. There is no runtime `addCollateral`
+function or heartbeat setter. Every config starts with a three-hour heartbeat.
 
-```text
-priceFeed, heartbeat, liquidationThreshold, liquidationBonus,
-tokenDecimals, feedDecimals, enabled
-```
+## Units and health factor
 
-Pricing normalizes both sides to 18 decimals:
-
-```text
-usdValue = amount * (answer * 1e18 / 10^feedDecimals) / 10^tokenDecimals
-```
-
-Risk terms (`threshold`, `bonus`) are currently global values mirrored into
-each config by `executeRiskParameters`; per-collateral risk tuning is the
-natural next step (debt ceilings included).
-
-## Liquidation flow
+Token balances use each collateral's native units. Debt, USD values, and health
+factors use 18-decimal fixed-point units. Token/feed decimals above 18 are rejected.
+With integer division rounded down:
 
 ```text
-liquidate(collateral, user, debtToCover)
-  1. require HF(user) < min                    (else HealthFactorOk)
-  2. debtToCover = min(debtToCover, debt[user])
-  3. quote: base = usdToToken(debt); want = base * (100 + bonus) / 100
-     if want > balance[user]: seize all, cover only its bonus-discounted value
-  4. move collateral to liquidator; burn DSC from liquidator against user's debt
-  5. if debt remains and user has NO collateral left anywhere:
-       write off to s_badDebt                   (BadDebtRealized)
-     elif this call exhausted the named collateral but other types remain:
-       skip the HF-improvement check (progress toward full clearance)
-     else: require HF improved                   (else HealthFactorNotImproved)
+normalizedPrice = floor(answer × 1e18 / 10^feedDecimals)
+usdValue        = floor(tokenAmount × normalizedPrice / 10^tokenDecimals)
+adjustedValue   = Σ floor(usdValue[token] × threshold[token] / 100)
+healthFactor    = floor(adjustedValue × 1e18 / userDebt)
 ```
 
-The old code did step 3 as an unchecked subtraction and always enforced the
-improvement check, so positions below `(100 + bonus)%` collateralization could
-never be touched. The new flow always makes progress and accounts the
-remainder explicitly.
+Zero-debt accounts return `type(uint256).max` from `getHealthFactor`. Minting
+and collateral withdrawal must leave the account at or above the configured
+minimum. The defaults are a 50% threshold and a minimum factor of `1e18`.
+`calculateHealthFactor(debt, value)` is a legacy helper using the **default**
+threshold; `getHealthFactor(user)` uses current collateral configs.
 
-## Pause semantics (asymmetric)
+`Math.mulDiv` avoids overflowing intermediate products in the principal pricing
+and ratio calculations. Integer conversion still introduces rounding; token/USD
+round trips are not exact for every amount and price.
+
+## Liquidation and bad debt
+
+```mermaid
+flowchart TD
+    A[Unhealthy borrower and positive requested debt] --> B[Cap requested debt at borrower debt]
+    B --> C[Quote collateral including bonus]
+    C --> D{Quote exceeds selected balance?}
+    D -->|No| E[Seize quoted amount and burn requested debt]
+    D -->|Yes| F[Seize selected balance and burn its bonus-discounted value]
+    E --> G{Debt remains?}
+    F --> G
+    G -->|No| H[Settlement complete]
+    G -->|Yes| I{Any collateral remains?}
+    I -->|No| J[Move residual active debt to bad debt]
+    I -->|Yes| K[Require improved health unless selected collateral exhausted]
+```
+
+The liquidator supplies DSC and receives collateral. A quote covering zero debt
+or seizing zero collateral reverts. The liquidator must also pass its own final
+health-factor check. A stale feed for collateral held by the borrower can block
+valuation and settlement.
+
+Exhausting one collateral type permits progress without a health-factor
+improvement check. Exhausting **all** collateral moves residual borrower debt
+from active debt to `s_badDebt`; this does not burn the residual DSC supply.
 
 ```text
-PAUSED blocks:  mintDsc, redeemCollateral, redeemCollateralForDsc
-PAUSED allows:  depositCollateral, burnDsc, liquidate, coverBadDebt
+totalAccountedDebt = totalActiveDebt + badDebt
 ```
 
-Rationale: a pause must not trap borrowers (unable to save themselves) or
-freeze liquidators (letting bad debt grow). Only risk-*increasing* actions
-stop. `pause` is guardian-or-owner; `unpause` is owner-only.
+Anyone holding DSC can approve the engine and call `coverBadDebt`. The engine
+burns that DSC and reduces bad debt by the same amount. There is no automatic
+insurance source or collateral recovery for that voluntary payment.
 
-## Risk-change lifecycle
+This flow addresses the demonstrated debt-plus-bonus underflow scenario. It
+does not guarantee liquidation under dust, oracle failure, unavailable DSC,
+malicious token behavior, or uneconomic execution conditions.
 
-```text
-scheduleRiskParameters(t, b, m)  -- validates bounds + coupling, stores hash, eta = now + 48h
-cancelRiskParameters()           -- owner clears a queued change
-executeRiskParameters(t, b, m)   -- after eta, hash must match; mirrors values into configs
-```
+## Emergency controls
 
-Bounds: threshold in [10, 80], bonus ≤ 20, minHealthFactor in [1e18, 2e18],
-and `threshold * (100 + bonus) < 100 * 100` so liquidation stays mathematically
-profitable at the margin.
+| Operation | Available while paused? |
+| --- | --- |
+| Deposit collateral | Yes |
+| Repay via `burnDsc` | Yes |
+| Liquidate / cover bad debt | Yes |
+| Mint DSC | No |
+| Redeem collateral / combined burn-and-redeem | No |
 
-## Invariant-test wiring
+Other validation still applies. Combined deposit-and-mint reverts atomically
+while paused. To repay during a pause, use `burnDsc` separately. Owner or guardian
+can pause; only the owner can unpause. A zero guardian disables that role.
 
-`test/fuzz/*` drives the engine through `StopOnRevertHandler` (fail-on-revert)
-and `ContinueOnRevertHandler`, asserting solvency
-(`collateral value ≥ total DSC`) and non-reverting getters. `test/poc/*` holds
-one focused regression test per audit finding.
+## Delayed risk changes
+
+The owner schedules a hash of `(threshold, bonus, minHealthFactor)`. Execution
+requires the same tuple and at least 48 hours. The owner can cancel or replace
+the pending change; replacement starts a new delay.
+
+Bounds are threshold `[10, 80]`, bonus `[0, 20]`, and minimum health factor
+`[1e18, 2e18]`, with `threshold × (100 + bonus) < 10000`. Execution copies the
+threshold and bonus into every collateral config. This check constrains the
+parameter relationship; it does not guarantee liquidator profitability after gas.
+Guardian changes, pause/unpause, and ownership operations do not use this delay.

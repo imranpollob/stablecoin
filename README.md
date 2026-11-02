@@ -1,157 +1,176 @@
-# DSC Stablecoin — my security-research case study
+# DSC Stablecoin
 
-Hi, I'm Imran. I want to work as a blockchain security researcher, so instead
-of just following another DeFi tutorial, I took a codebase I'd already studied,
-broke it, audited it, and fixed it — in public. This repo is the result.
+**DeFi security research · Solidity · Foundry**
 
-The starting point is the Cyfrin Updraft `foundry-defi-stablecoin` course
-project (script headers still credit Patrick Collins). Everybody in audit
-circles has seen it, which is exactly why I picked it: there is no hiding
-behind unfamiliar code. My contribution is everything a reviewer is reading
-right now — the hardening, the findings, and every test under `test/poc/`.
+[![CI](https://github.com/imranpollob/stablecoin/actions/workflows/ci.yml/badge.svg)](https://github.com/imranpollob/stablecoin/actions/workflows/ci.yml)
+[![Solidity](https://img.shields.io/badge/Solidity-0.8.19-363636?logo=solidity)](foundry.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The short version of the story is in [`WORKLOG.md`](WORKLOG.md), the full
-audit report in [`audits/self-audit-v0.md`](audits/self-audit-v0.md), and the
-plan I worked from in [`plan.md`](plan.md).
+A security research case study of an overcollateralized stablecoin: manual review,
+executable regression tests, protocol hardening, and stateful invariant testing.
+The focus is on liquidation behavior, oracle assumptions, debt accounting, and
+privileged operations.
 
-## How the system fits together
+Built on the Cyfrin Updraft `foundry-defi-stablecoin` educational project by
+Patrick Collins. This repository extends that foundation with a documented
+self-review, decimal-aware pricing, emergency controls, delayed risk changes,
+and explicit bad-debt accounting. Findings are educational, self-assessed, and
+have not been independently adjudicated.
 
-```mermaid
-flowchart TB
-    subgraph Actors
-        U[User / borrower]
-        L[Liquidator / MEV searcher]
-        O[Owner - multisig behind 48h timelock]
-        G[Guardian - can only pause]
-        F[Chainlink feeds - one per collateral]
-    end
-    subgraph Protocol
-        E[DSCEngine - custody, mint/burn, health checks, liquidation]
-        D[DSC token - mintable and burnable only by the engine]
-        ORA[OracleLib - validates each feed reading]
-        CFG[(CollateralConfig per token - feed, decimals, heartbeat, threshold, bonus)]
-    end
-    U -->|deposit / mint / repay / withdraw| E
-    L -->|liquidate underwater positions| E
-    O -->|schedule - wait 48h - execute risk changes| E
-    G -->|pause risk-increasing actions only| E
-    F -->|price + heartbeat| ORA
-    ORA -->|checked price| E
-    E -->|owns| D
-    CFG -.->|configures| E
-```
+**Status:** research prototype, tested locally with mocks. No independent audit
+or production-readiness claim. See [security assumptions](docs/threat-model.md).
 
-Two design decisions worth knowing up front:
+## Review the research
 
-- **The pause is asymmetric.** Pausing stops minting and withdrawals, but never
-  stops deposits, repayments, or liquidations. I learned the hard way (M-01)
-  that a pause which traps borrowers while prices keep moving just manufactures
-  bad debt.
-- **Liquidation never bricks.** If collateral can't cover debt plus the bonus,
-  the liquidator takes what's there and the remainder becomes explicit on-chain
-  bad debt (`s_badDebt`) instead of an unliquidatable position. Somebody still
-  has to recapitalize it — that's the honest part, and it's tracked as future
-  work.
+| Start here | Evidence |
+| --- | --- |
+| Findings and remediation decisions | [Original self-review](audits/self-audit-v0.md) and [accounting follow-up](audits/review-2026-11.md) |
+| Executable security cases | [Regression tests](test/poc/) — one file per covered finding |
+| Properties and test boundaries | [Property specification](docs/properties.md) |
+| Trust and residual risk | [Threat model](docs/threat-model.md) |
+| Tool output and manual triage | [Static analysis](audits/static-analysis.md) |
 
-## What I found and fixed
+For a short review, start with **H-01** (liquidation and residual debt), **H-02**
+(collateral decimals), and **L-06** (an inherited token function bypassing debt
+accounting). Each has a focused test and an explanation of the resulting behavior.
 
-| ID | Finding | Severity | Regression test |
-|----|---------|----------|-----------------|
-| H-01 | Liquidation reverted below (100 + bonus)% collateralization, so bad debt could never be cleared | High | [`H01_LiquidationUnderflow`](test/poc/H01_LiquidationUnderflow.t.sol) |
-| H-02 | Price math assumed 18-decimal tokens and 8-decimal feeds (WBTC mispriced by 1e10) | High | [`H02_CollateralDecimals`](test/poc/H02_CollateralDecimals.t.sol) |
-| M-01 | Pause trapped users and blocked liquidators | Medium | [`M01_AsymmetricPause`](test/poc/M01_AsymmetricPause.t.sol) |
-| M-02 | Instant, unbounded risk-parameter changes (single-transaction rug) | Medium | [`M02_RiskTimelock`](test/poc/M02_RiskTimelock.t.sol) |
-| M-03 | Oracle gaps: no `price > 0`, one global heartbeat | Medium | [`M03_OracleValidation`](test/poc/M03_OracleValidation.t.sol) |
-| M-04 | One stale feed froze every user, even those not holding that token | Medium | [`M04_UnusedStaleFeed`](test/poc/M04_UnusedStaleFeed.t.sol) |
-| L-01 | Two settlement paths lacked `nonReentrant` | Low | [`L01_ReentrancyGuard`](test/poc/L01_ReentrancyGuard.t.sol) |
-| L-03 | Constructor accepted duplicates and zero addresses | Low | [`L03_ConstructorValidation`](test/poc/L03_ConstructorValidation.t.sol) |
-| L-04 | Fee-on-transfer tokens credited by nominal amount | Low | [`L04_FeeOnTransferAccounting`](test/poc/L04_FeeOnTransferAccounting.t.sol) |
-| L-05 | Single-step ownership on engine and token | Low | [`L05_TwoStepOwnership`](test/poc/L05_TwoStepOwnership.t.sol) |
-| I-01 | Health-factor math must never round up | Info | [`I01_HealthFactorPrecision`](test/poc/I01_HealthFactorPrecision.t.sol) |
+## Protocol overview
 
-What I deliberately left open: no minimum-debt floor (L-02), no L2 sequencer
-check, no fallback oracle. Each is documented with a reason in
-[`docs/threat-model.md`](docs/threat-model.md) — I'd rather show an explicit
-accepted risk than pretend the system is finished.
-
-### The liquidation flow, after the fix
-
-```mermaid
-flowchart TD
-    A[liquidate called, HF below minimum] --> B{seizure > user balance?}
-    B -- no --> C[seize debt + bonus, burn debt]
-    B -- yes --> D[seize entire balance, cover only its bonus-discounted value]
-    C --> E{debt left?}
-    D --> E
-    E -- none --> F[done, emit Liquidated]
-    E -- left, no collateral anywhere --> G[write off to s_badDebt, emit BadDebtRealized]
-    E -- left, other collateral remains --> H{this type exhausted?}
-    H -- yes --> I[skip HF-improvement check, allow progress]
-    H -- no --> J[require HF improved]
-```
-
-### Changing risk parameters
-
-```mermaid
-sequenceDiagram
-    participant Owner
-    participant Engine
-    Owner->>Engine: scheduleRiskParameters(t, b, m)
-    Note over Engine: validates bounds + threshold/bonus coupling
-    Engine-->>Owner: RiskChangeScheduled, eta = now + 48h
-    Note over Owner,Engine: anyone can review or exit for 48 hours
-    Owner->>Engine: cancelRiskParameters() (optional)
-    Owner->>Engine: executeRiskParameters(t, b, m) after eta
-    Note over Engine: hash must match, mirrors values into each collateral
-```
-
-## How I test it
+Users deposit allowlisted collateral and mint DSC against its USD value. The
+engine enforces a minimum health factor when borrowing or withdrawing collateral.
+Liquidators repay unhealthy positions in exchange for collateral plus a bonus.
+DSC is accounted at $1 for protocol calculations; this does not guarantee a market peg.
 
 ```mermaid
 flowchart LR
-    subgraph Suites
-        direction TB
-        P[test/poc - one regression test per finding]
-        U[test/unit - behavior of each function]
-        S[test/fuzz fail-on-revert - solvency + non-reverting getters]
-        C[test/fuzz continue-on-revert - solvency under adversarial use]
-    end
-    P -->|guards| SRC[src - DSCEngine, DSC, OracleLib]
-    U -->|guards| SRC
-    S -->|guards| SRC
-    C -->|guards| SRC
+    Borrower -->|deposit, mint, repay, withdraw| Engine[DSCEngine]
+    Liquidator -->|repay unhealthy debt| Engine
+    Feeds[Price feeds] --> Oracle[OracleLib validation]
+    Oracle -->|validated prices| Engine
+    Engine -->|mint and burn| DSC[DSC token]
+    Owner -->|48h delayed risk changes| Engine
+    Guardian -->|pause| Engine
 ```
+
+| Mechanism | Current implementation |
+| --- | --- |
+| Collateral | Fixed at construction; token and feed decimals must be ≤18 |
+| Borrowing limit | Default 50% liquidation threshold and minimum health factor of `1e18` |
+| Liquidation | Default 10% bonus; seizure capped at the borrower's selected collateral balance |
+| Bad debt | Residual debt recorded when all collateral is exhausted; voluntary `coverBadDebt` burns DSC against it |
+| Emergency pause | Blocks minting and withdrawals; deposits, repayment, and liquidation remain available, subject to their other checks |
+| Administration | Two-step ownership; 48-hour delay and bounds on risk changes; separate pause-only guardian |
+| Oracles | Positive price, complete round, valid timestamp, and heartbeat checks; default heartbeat is three hours |
+
+The 48-hour delay is implemented inside the engine. Deployment does not install
+a multisig or an external timelock. Risk changes apply globally to all collateral
+configs. [Architecture and formulas →](docs/architecture.md)
+
+## Security findings
+
+Severity labels reflect this project's self-review. “Addressed” identifies the
+implemented mitigation and regression case; it does not imply exhaustive verification.
+
+| ID | Severity | Issue / hardening area | Evidence |
+| --- | --- | --- | --- |
+| H-01 | High | Liquidation reverts when collateral cannot fund debt plus bonus | [Test](test/poc/H01_LiquidationUnderflow.t.sol) |
+| H-02 | High | Fixed decimal assumptions misprice non-18-decimal collateral | [Test](test/poc/H02_CollateralDecimals.t.sol) |
+| M-01 | Medium | Pause blocks repayment and liquidation | [Test](test/poc/M01_AsymmetricPause.t.sol) |
+| M-02 | Medium | Immediate, unbounded administrator risk changes | [Test](test/poc/M02_RiskTimelock.t.sol) |
+| M-03 | Medium | Incomplete oracle validation | [Test](test/poc/M03_OracleValidation.t.sol) |
+| M-04 | Medium | Unused stale feeds block unrelated positions | [Test](test/poc/M04_UnusedStaleFeed.t.sol) |
+| L-01 | Low | Inconsistent reentrancy guards on settlement entry points | [Test](test/poc/L01_ReentrancyGuard.t.sol) |
+| L-03 | Low | Duplicate collateral accepted at construction | [Test](test/poc/L03_ConstructorValidation.t.sol) |
+| L-04 | Low | Nominal deposit accounting ignores transfer fees | [Test](test/poc/L04_FeeOnTransferAccounting.t.sol) |
+| L-05 | Low | Single-step ownership transfer | [Test](test/poc/L05_TwoStepOwnership.t.sol) |
+| L-06 | Low | Inherited `burnFrom` changes supply without settling engine debt | [Test](test/poc/L06_DirectBurn.t.sol) |
+| I-01 | Informational | Health-factor precision and rounding | [Test](test/poc/I01_HealthFactorPrecision.t.sol) |
+
+These areas are addressed in the current implementation. **L-02**, uneconomical
+dust liquidation, remains open. Oracle failover, L2 sequencer handling, and an
+automated recapitalization mechanism are also outside the current implementation.
+
+## Run locally
+
+Requirements: Git, Make (optional), and **Foundry v1.8.4** (`forge`, `cast`, and
+`anvil`). Solidity **0.8.19**, the Paris EVM target, and optimizer settings are
+explicit in [foundry.toml](foundry.toml). Dependencies are pinned Git submodules.
 
 ```bash
-git clone --recurse-submodules <repository-url> && cd stablecoin
+git clone --recurse-submodules https://github.com/imranpollob/stablecoin.git
+cd stablecoin
+
+# For an existing clone:
+git submodule update --init --recursive
+
 forge build
-forge test                      # everything: unit + PoC + invariants
-forge test --match-path "test/poc/*"   # just the findings, one file each
-forge fmt --check && forge build --sizes
+forge test
+make check
 ```
 
-Tags: `v0-vulnerable` is the pre-fix baseline (every PoC fails there),
-`v1-fixed` is the audited state. Slither reports zero High/Medium/Low findings
-— the 20 info-level notes are each triaged in
-[`audits/static-analysis.md`](audits/static-analysis.md). Properties I test are
-listed in plain English in [`docs/properties.md`](docs/properties.md), and the
-threat model lives in [`docs/threat-model.md`](docs/threat-model.md).
+Tests require no RPC endpoint, funded wallet, or API key. Initial dependency and
+compiler installation require network access.
 
-One honest footnote: while verifying a fresh clone, the invariant suite failed
-once — not because of a protocol bug, but because the fuzzer picked the engine
-itself as a user, turning a deposit into a zero-delta self-transfer that the
-code correctly rejects. I fixed the suite with `excludeSender`, not the
-protocol. The full story is in the WORKLOG; I'm keeping it here because this
-is exactly the kind of thing I'd want a candidate to tell me about.
+```bash
+# Focused research cases
+forge test --match-path 'test/poc/*.t.sol' -vv
+forge test --match-contract H01LiquidationUnderflowTest -vvvv
+forge test --match-contract L06DirectBurnTest -vvv
 
-## What's next
+# Longer invariant campaign (256 runs × 128 calls per campaign)
+FOUNDRY_PROFILE=ci forge test --match-path 'test/fuzz/**/*.t.sol'
 
-- Mainnet-fork tests against real Chainlink feeds and real WBTC (proves H-02
-  outside mocks).
-- Medusa/Echidna campaign plus Halmos symbolic checks on the pricing math.
-- A stability pool or insurance fund so `s_badDebt` has somewhere to go.
-- The blog post: "Auditing my own stablecoin."
+# Repeat a campaign with a chosen seed
+forge test --match-contract StopOnRevertInvariants --fuzz-seed 0x1234
 
-## License
+# Coverage and contract sizes
+forge coverage --report summary
+forge build --sizes
+```
 
-MIT
+To simulate deployment without broadcasting transactions:
+
+```bash
+forge script script/DeployDSC.s.sol:DeployDSC
+```
+
+For local Anvil deployment, run `anvil` in another terminal, then `make deploy-local`.
+The local script uses Anvil's public development key. The inherited Sepolia
+configuration is unverified and is not a supported deployment target for this case study.
+
+## Verification approach
+
+- **Unit tests:** engine behavior, token access rules, oracle validation, and administrative controls.
+- **Security regressions:** targeted scenarios for each finding linked above, including collateral exhaustion and debt/supply divergence.
+- **Fail-on-revert invariants:** four funded borrowers; bounded deposit, mint, repay, redeem, and transfer actions at fixed prices. Checks debt conservation, collateral custody, and borrower health.
+- **Continue-on-revert invariants:** funded borrowers and a separate funded liquidator, a seeded bad-debt settlement, price shocks, and invalid requests. Checks accounting through successful and reverted transactions.
+- **Static analysis:** pinned Slither run with manual triage. CI retains the JSON report and fails on High detector results; Medium and Low results remain visible for review.
+
+Price shocks can create insolvency. The adversarial suite checks that the debt
+ledger remains accurate; it does not assert that collateral always covers supply.
+The [property specification](docs/properties.md) records model assumptions and gaps.
+
+Historical tags `v0-vulnerable` and `v1-fixed` preserve earlier snapshots. Current
+tests use newer interfaces and are not a drop-in differential suite for those tags.
+
+## Repository layout
+
+```text
+src/          Engine, DSC token, and oracle validation library
+script/       Deployment and network/mock configuration
+test/unit/    Function-level behavior and access-control tests
+test/poc/     Security regression scenarios
+test/fuzz/    Stateful handlers and invariant campaigns
+audits/       Self-review reports and static-analysis evidence
+docs/         Architecture, threat model, and property specification
+```
+
+[Roadmap](plan.md) · [Work log](WORKLOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+
+## Attribution and license
+
+Original educational foundation: [Cyfrin / Patrick Collins](https://github.com/Cyfrin/foundry-defi-stablecoin-cu).
+Original attribution is retained in the deployment scripts. Research extensions,
+reports, and regression tests are maintained by [Imran](https://github.com/imranpollob).
+
+[MIT](LICENSE). Third-party dependencies retain their own licenses and notices.

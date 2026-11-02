@@ -1,0 +1,127 @@
+{
+  "tool": "Slither",
+  "version": "0.11.3",
+  "review_date": "2026-11-01 (America/New_York)",
+  "command": "slither . --filter-paths 'lib/|test/|script/' --exclude-dependencies --fail-high --json slither-report.json",
+  "source_sha256": {
+    "src/DSCEngine.sol": "fa880dc7a8f9f8826e2df1779f8aa79766e00c7170f9d0258fced2340a1f9ea9",
+    "src/DecentralizedStableCoin.sol": "717a967b5c5d8e912dd47c3cea2782a6cff4e6e3ee9787f3508f55cebedf24ee",
+    "src/libraries/OracleLib.sol": "0b634a40c3360740e2898758ab5b61a18b8da1a1719f405db705f43dfd3453fd"
+  },
+  "counts": {
+    "Medium": 4,
+    "Low": 8,
+    "Informational": 2,
+    "Optimization": 4
+  },
+  "findings": [
+    {
+      "check": "incorrect-equality",
+      "impact": "Medium",
+      "confidence": "High",
+      "description": "DSCEngine.depositCollateral(address,uint256) (src/DSCEngine.sol#316-333) uses a dangerous strict equality:\n\t- received == 0 (src/DSCEngine.sol#329)\n"
+    },
+    {
+      "check": "reentrancy-no-eth",
+      "impact": "Medium",
+      "confidence": "Medium",
+      "description": "Reentrancy in DSCEngine.liquidate(address,address,uint256) (src/DSCEngine.sol#278-303):\n\tExternal calls:\n\t- _redeemCollateral(collateral,collateralSeized,user,msg.sender) (src/DSCEngine.sol#295)\n\t\t- success = IERC20(token).transfer(to,amount) (src/DSCEngine.sol#342)\n\t- _burnDsc(actualDebtCovered,user,msg.sender) (src/DSCEngine.sol#296)\n\t\t- success = i_dsc.transferFrom(dscFrom,address(this),amount) (src/DSCEngine.sol#349)\n\t\t- i_dsc.burn(amount) (src/DSCEngine.sol#351)\n\tState variables written after the call(s):\n\t- _burnDsc(actualDebtCovered,user,msg.sender) (src/DSCEngine.sol#296)\n\t\t- s_DSCMinted[onBehalfOf] -= amount (src/DSCEngine.sol#347)\n\tDSCEngine.s_DSCMinted (src/DSCEngine.sol#71) can be used in cross function reentrancies:\n\t- DSCEngine._getAccountInformation(address) (src/DSCEngine.sol#396-403)\n\t- DSCEngine._healthFactor(address) (src/DSCEngine.sol#405-409)\n\t- DSCEngine.mintDsc(uint256) (src/DSCEngine.sol#305-313)\n\t- _settleLiquidation(user,startingHealthFactor,selectedCollateralExhausted) (src/DSCEngine.sol#299)\n\t\t- s_DSCMinted[user] = 0 (src/DSCEngine.sol#383)\n\tDSCEngine.s_DSCMinted (src/DSCEngine.sol#71) can be used in cross function reentrancies:\n\t- DSCEngine._getAccountInformation(address) (src/DSCEngine.sol#396-403)\n\t- DSCEngine._healthFactor(address) (src/DSCEngine.sol#405-409)\n\t- DSCEngine.mintDsc(uint256) (src/DSCEngine.sol#305-313)\n\t- _settleLiquidation(user,startingHealthFactor,selectedCollateralExhausted) (src/DSCEngine.sol#299)\n\t\t- s_totalActiveDebt -= remainingDebt (src/DSCEngine.sol#384)\n\tDSCEngine.s_totalActiveDebt (src/DSCEngine.sol#63) can be used in cross function reentrancies:\n\t- DSCEngine.getTotalAccountedDebt() (src/DSCEngine.sol#580-582)\n\t- DSCEngine.getTotalActiveDebt() (src/DSCEngine.sol#576-578)\n\t- DSCEngine.mintDsc(uint256) (src/DSCEngine.sol#305-313)\n"
+    },
+    {
+      "check": "unused-return",
+      "impact": "Medium",
+      "confidence": "Medium",
+      "description": "DSCEngine.getTokenAmountFromUsd(address,uint256) (src/DSCEngine.sol#505-519) ignores return value by (None,answer,None,None,None) = feed.staleCheckLatestRoundData(config.heartbeat) (src/DSCEngine.sol#516)\n"
+    },
+    {
+      "check": "unused-return",
+      "impact": "Medium",
+      "confidence": "Medium",
+      "description": "DSCEngine._getUsdValue(address,uint256) (src/DSCEngine.sol#423-430) ignores return value by (None,answer,None,None,None) = feed.staleCheckLatestRoundData(config.heartbeat) (src/DSCEngine.sol#427)\n"
+    },
+    {
+      "check": "missing-zero-check",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "DSCEngine.setGuardian(address).newGuardian (src/DSCEngine.sol#144) lacks a zero-check on :\n\t\t- s_guardian = newGuardian (src/DSCEngine.sol#146)\n"
+    },
+    {
+      "check": "calls-loop",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "DSCEngine.constructor(address[],address[],address) (src/DSCEngine.sol#109-138) has external calls inside a loop: feedDecimals = AggregatorV3Interface(feed).decimals() (src/DSCEngine.sol#122)\n"
+    },
+    {
+      "check": "calls-loop",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "DSCEngine.constructor(address[],address[],address) (src/DSCEngine.sol#109-138) has external calls inside a loop: tokenDecimals = IERC20Metadata(token).decimals() (src/DSCEngine.sol#121)\n"
+    },
+    {
+      "check": "reentrancy-benign",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "Reentrancy in DSCEngine.liquidate(address,address,uint256) (src/DSCEngine.sol#278-303):\n\tExternal calls:\n\t- _redeemCollateral(collateral,collateralSeized,user,msg.sender) (src/DSCEngine.sol#295)\n\t\t- success = IERC20(token).transfer(to,amount) (src/DSCEngine.sol#342)\n\t- _burnDsc(actualDebtCovered,user,msg.sender) (src/DSCEngine.sol#296)\n\t\t- success = i_dsc.transferFrom(dscFrom,address(this),amount) (src/DSCEngine.sol#349)\n\t\t- i_dsc.burn(amount) (src/DSCEngine.sol#351)\n\tState variables written after the call(s):\n\t- _settleLiquidation(user,startingHealthFactor,selectedCollateralExhausted) (src/DSCEngine.sol#299)\n\t\t- s_badDebt += remainingDebt (src/DSCEngine.sol#385)\n"
+    },
+    {
+      "check": "reentrancy-benign",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "Reentrancy in DSCEngine.depositCollateral(address,uint256) (src/DSCEngine.sol#316-333):\n\tExternal calls:\n\t- success = IERC20(tokenCollateralAddress).transferFrom(msg.sender,address(this),amountCollateral) (src/DSCEngine.sol#326)\n\tState variables written after the call(s):\n\t- s_collateralDeposited[msg.sender][tokenCollateralAddress] += received (src/DSCEngine.sol#331)\n"
+    },
+    {
+      "check": "reentrancy-events",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "Reentrancy in DSCEngine.depositCollateralAndMintDsc(address,uint256,uint256) (src/DSCEngine.sol#221-230):\n\tExternal calls:\n\t- depositCollateral(tokenCollateralAddress,amountCollateral) (src/DSCEngine.sol#228)\n\t\t- success = IERC20(tokenCollateralAddress).transferFrom(msg.sender,address(this),amountCollateral) (src/DSCEngine.sol#326)\n\t- mintDsc(amountDscToMint) (src/DSCEngine.sol#229)\n\t\t- minted = i_dsc.mint(msg.sender,amountDscToMint) (src/DSCEngine.sol#310)\n\tEvent emitted after the call(s):\n\t- DscMinted(msg.sender,amountDscToMint) (src/DSCEngine.sol#312)\n\t\t- mintDsc(amountDscToMint) (src/DSCEngine.sol#229)\n"
+    },
+    {
+      "check": "timestamp",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "DSCEngine.executeRiskParameters(uint256,uint256,uint256) (src/DSCEngine.sol#183-210) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < s_pendingRiskChangeEta (src/DSCEngine.sol#193)\n"
+    },
+    {
+      "check": "timestamp",
+      "impact": "Low",
+      "confidence": "Medium",
+      "description": "OracleLib.staleCheckLatestRoundData(AggregatorV3Interface,uint256) (src/libraries/OracleLib.sol#16-38) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- updatedAt == 0 || updatedAt > block.timestamp || answeredInRound < roundId (src/libraries/OracleLib.sol#30)\n\t- block.timestamp - updatedAt > heartbeat (src/libraries/OracleLib.sol#33)\n"
+    },
+    {
+      "check": "solc-version",
+      "impact": "Informational",
+      "confidence": "High",
+      "description": "Version constraint 0.8.19 contains known severe issues (https://solidity.readthedocs.io/en/latest/bugs.html)\n\t- VerbatimInvalidDeduplication\n\t- FullInlinerNonExpressionSplitArgumentEvaluationOrder\n\t- MissingSideEffectsOnSelectorAccess.\nIt is used by:\n\t- 0.8.19 (src/DSCEngine.sol#2)\n\t- 0.8.19 (src/DecentralizedStableCoin.sol#2)\n\t- 0.8.19 (src/libraries/OracleLib.sol#2)\n"
+    },
+    {
+      "check": "naming-convention",
+      "impact": "Informational",
+      "confidence": "High",
+      "description": "Variable DSCEngine.s_DSCMinted (src/DSCEngine.sol#71) is not in mixedCase\n"
+    },
+    {
+      "check": "cache-array-length",
+      "impact": "Optimization",
+      "confidence": "High",
+      "description": "Loop condition i < s_collateralTokens.length (src/DSCEngine.sol#201) should use cached array length instead of referencing `length` member of the storage array.\n "
+    },
+    {
+      "check": "cache-array-length",
+      "impact": "Optimization",
+      "confidence": "High",
+      "description": "Loop condition i < s_collateralTokens.length (src/DSCEngine.sol#451) should use cached array length instead of referencing `length` member of the storage array.\n "
+    },
+    {
+      "check": "cache-array-length",
+      "impact": "Optimization",
+      "confidence": "High",
+      "description": "Loop condition i < s_collateralTokens.length (src/DSCEngine.sol#412) should use cached array length instead of referencing `length` member of the storage array.\n "
+    },
+    {
+      "check": "cache-array-length",
+      "impact": "Optimization",
+      "confidence": "High",
+      "description": "Loop condition i < s_collateralTokens.length (src/DSCEngine.sol#497) should use cached array length instead of referencing `length` member of the storage array.\n "
+    }
+  ]
+}

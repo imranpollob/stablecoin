@@ -39,7 +39,10 @@ abstract contract ProtocolTestBase is Test {
     address internal user = makeAddr("user");
     address internal liquidator = makeAddr("liquidator");
 
-    function _deploy(address[] memory tokens, address[] memory feeds)
+    function _deploy(
+        address[] memory tokens,
+        address[] memory feeds
+    )
         internal
         returns (DecentralizedStableCoin dsc, DSCEngine engine)
     {
@@ -47,10 +50,8 @@ abstract contract ProtocolTestBase is Test {
         engine = new DSCEngine(tokens, feeds, address(dsc));
         dsc.transferOwnership(address(engine));
 
-        // Current code uses Ownable2Step. The vulnerable snapshot used one-step Ownable and does
-        // not expose this selector, so a low-level call keeps the same PoC source compatible.
-        (bool accepted,) = address(engine).call(abi.encodeWithSignature("acceptDscOwnership()"));
-        accepted;
+        engine.acceptDscOwnership();
+        assertEq(dsc.owner(), address(engine));
     }
 
     function _depositAndMint(

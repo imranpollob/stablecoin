@@ -21,6 +21,12 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable2Step {
         super.burn(amount);
     }
 
+    /// @notice Only the engine may destroy DSC, including through the allowance-based path.
+    /// @dev Inherited burnFrom would otherwise reduce supply without updating engine debt.
+    function burnFrom(address account, uint256 amount) public override onlyOwner {
+        super.burnFrom(account, amount);
+    }
+
     function mint(address to, uint256 amount) external onlyOwner returns (bool) {
         if (to == address(0)) revert DecentralizedStableCoin__NotZeroAddress();
         if (amount == 0) revert DecentralizedStableCoin__AmountMustBeMoreThanZero();

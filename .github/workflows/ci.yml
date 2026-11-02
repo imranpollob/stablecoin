@@ -2,40 +2,63 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FOUNDRY_PROFILE: ci
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
+        with:
+          version: v1.8.4
       - name: Check formatting
         run: forge fmt --check
-
       - name: Build with sizes
         run: forge build --sizes
-
-      - name: Run tests
+      - name: Run unit, security, and invariant tests
         run: forge test
 
   static-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Run Slither
-        uses: crytic/slither-action@v0.4.1
         with:
-          fail-on: none
+          version: v1.8.4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Slither
+        run: python -m pip install slither-analyzer==0.11.3
+      - name: Analyze production contracts
+        run: >-
+          slither . --filter-paths 'lib/|test/|script/'
+          --exclude-dependencies --fail-high --json slither-report.json
+      - name: Retain static analysis report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report
+          path: slither-report.json
+          if-no-files-found: warn

@@ -378,7 +378,7 @@ contract DSCEngineTest is StdCheats, Test {
     /// @notice Tests that health factor can go below 1 when collateral value drops
     function testHealthFactorCanGoBelowOne() public depositedCollateralAndMintedDsc {
         int256 ethUsdUpdatedPrice = 18e8; // 1 ETH = $18
-            // Remember, we need $200 at all times if we have $100 of debt
+        // Remember, we need $200 at all times if we have $100 of debt
 
         MockV3Aggregator(ethUsdPriceFeed).updateAnswer(ethUsdUpdatedPrice);
 
@@ -464,8 +464,7 @@ contract DSCEngineTest is StdCheats, Test {
     /// @notice Tests that liquidation provides correct collateral payout to liquidator
     function testLiquidationPayoutIsCorrect() public liquidated {
         uint256 liquidatorWethBalance = ERC20Mock(weth).balanceOf(liquidator);
-        uint256 expectedWeth =
-            dsce.getTokenAmountFromUsd(weth, amountToMint)
+        uint256 expectedWeth = dsce.getTokenAmountFromUsd(weth, amountToMint)
             + (dsce.getTokenAmountFromUsd(weth, amountToMint)
                 * dsce.getLiquidationBonus()
                 / dsce.getLiquidationPrecision());
@@ -477,8 +476,7 @@ contract DSCEngineTest is StdCheats, Test {
     /// @notice Tests that user retains some collateral after liquidation
     function testUserStillHasSomeEthAfterLiquidation() public liquidated {
         // Get how much WETH the user lost
-        uint256 amountLiquidated =
-            dsce.getTokenAmountFromUsd(weth, amountToMint)
+        uint256 amountLiquidated = dsce.getTokenAmountFromUsd(weth, amountToMint)
             + (dsce.getTokenAmountFromUsd(weth, amountToMint)
                 * dsce.getLiquidationBonus()
                 / dsce.getLiquidationPrecision());

@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import { ProtocolTestBase, DecimalToken } from "./helpers/ProtocolTestBase.sol";
+import { OracleLib } from "../../src/libraries/OracleLib.sol";
 import { DSCEngine } from "../../src/DSCEngine.sol";
 import { MockV3Aggregator } from "../mocks/MockV3Aggregator.sol";
 
@@ -16,7 +17,7 @@ contract M03OracleValidationTest is ProtocolTestBase {
         (, DSCEngine engine) = _deploy(tokens, feeds);
         feed.updateAnswer(0);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(OracleLib.OracleLib__InvalidPrice.selector, int256(0)));
         engine.getUsdValue(address(weth), 1 ether);
     }
 
@@ -32,7 +33,7 @@ contract M03OracleValidationTest is ProtocolTestBase {
         // price and make every position look infinitely collateralized.
         feed.updateAnswer(-100e8);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(OracleLib.OracleLib__InvalidPrice.selector, int256(-100e8)));
         engine.getUsdValue(address(weth), 1 ether);
     }
 }

@@ -1,47 +1,51 @@
--include .env
+.DEFAULT_GOAL := help
 
-.PHONY: all test clean deploy fund help install snapshot format anvil 
-
-DEFAULT_ANVIL_KEY := 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+.PHONY: help all install build test poc invariant check fmt coverage sizes clean anvil deploy-local
 
 help:
-	@echo "Usage:"
-	@echo "  make deploy [ARGS=...]\n    example: make deploy ARGS=\"--network sepolia\""
-	@echo ""
-	@echo "  make fund [ARGS=...]\n    example: make deploy ARGS=\"--network sepolia\""
+	@echo "make install       Initialize pinned Git submodules"
+	@echo "make check         Check formatting, build, and run all tests"
+	@echo "make poc           Run security regression tests"
+	@echo "make invariant     Run the longer CI invariant profile"
+	@echo "make coverage      Print coverage summary"
+	@echo "make deploy-local  Broadcast to a local Anvil node"
 
-all: clean remove install update build
+all: check
 
-# Clean the repo
-clean  :; forge clean
+install:
+	git submodule update --init --recursive
 
-# Remove modules (destructive: unregisters submodules; never auto-commits)
-remove :; rm -rf lib && rm -f .gitmodules && git rm --cached -r --quiet lib 2>/dev/null || true
+build:
+	forge build
 
-install :; forge install cyfrin/foundry-devops@0.1.0 && forge install smartcontractkit/chainlink-brownie-contracts@0.6.1 && forge install foundry-rs/forge-std@v1.5.3 && forge install openzeppelin/openzeppelin-contracts@v4.8.3
+test:
+	forge test
 
-# Update Dependencies
-update:; forge update
+poc:
+	forge test --match-path 'test/poc/*.t.sol' -vv
 
-build:; forge build
+invariant:
+	FOUNDRY_PROFILE=ci forge test --match-path 'test/fuzz/**/*.t.sol'
 
-test :; forge test 
+check:
+	forge fmt --check
+	forge build --sizes
+	forge test
 
-coverage :; forge coverage --report debug > coverage-report.txt
+fmt:
+	forge fmt
 
-snapshot :; forge snapshot
+coverage:
+	forge coverage --report summary
 
-format :; forge fmt
+sizes:
+	forge build --sizes
 
-anvil :; anvil -m 'test test test test test test test test test test test junk' --steps-tracing --block-time 1
+clean:
+	forge clean
 
-NETWORK_ARGS := --rpc-url http://localhost:8545 --private-key $(DEFAULT_ANVIL_KEY) --broadcast
+anvil:
+	anvil
 
-ifeq ($(findstring --network sepolia,$(ARGS)),--network sepolia)
-	NETWORK_ARGS := --rpc-url $(SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
-endif
-
-deploy:
-	@forge script script/DeployDSC.s.sol:DeployDSC $(NETWORK_ARGS)
-
-
+deploy-local:
+	forge script script/DeployDSC.s.sol:DeployDSC --rpc-url http://127.0.0.1:8545 --broadcast

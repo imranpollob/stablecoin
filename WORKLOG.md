@@ -1,8 +1,61 @@
 # WORKLOG
 
-Running log of the portfolio-hardening work. Dates in UTC.
+Running log of the portfolio-hardening work. Entries state their timezone.
 
-## 2026-11-02 — Audit fixes, PoCs, docs, hygiene (this session)
+Earlier entries are retained as historical notes. Current verification scope and
+results below supersede their test counts, blanket baseline-reproduction claims,
+and static-analysis summary.
+
+
+## 2026-11-01 (America/New_York) — Portfolio and verification review
+
+- Rewrote the README around scope, attribution, security evidence, reproducible
+  setup, current limitations, and a clear route through the research artifacts.
+- Aligned architecture, threat model, original self-review, and property
+  specification with the code. Removed unsupported claims about universal
+  liquidation liveness, a deployed multisig, independently verified findings,
+  and drop-in regression compatibility with historical tags.
+- Found and addressed L-06: inherited `burnFrom` could reduce DSC supply without
+  updating engine debt. Added holder/spender regressions and a valid repayment
+  case. Removing the override makes both access-control regressions fail;
+  restoring it passes all three cases.
+- Rebuilt both invariant handlers: four funded borrowers, real engine minting,
+  borrower approvals, explicit action selectors, and debt/custody assertions.
+  The adversarial fixture also seeds successful liquidation and realized bad
+  debt before randomized price changes. Fixed-price health is asserted only in
+  the fail-on-revert model.
+- Strengthened the oracle regressions to assert the exact invalid-price error.
+  Extended H-01 to settle and cover residual debt while paused.
+- Pinned Solidity 0.8.19, Paris, optimizer settings, and Foundry v1.8.4 in CI.
+  Added a 256-run/128-call invariant profile. Replaced dependency-removal/update
+  defaults with pinned submodule initialization and a non-destructive check target.
+- Added the MIT license file, contribution guidance, and a project security
+  policy. Retained upstream attribution and historical tags.
+- Reproduced Slither 0.11.3: **18 results — 0 High, 4 Medium, 8 Low,
+  2 Informational, 4 Optimization**. Preserved a compact result snapshot with
+  source hashes and replaced the previous unsupported all-informational triage.
+  CI retains raw JSON and gates High results; lower severities remain visible.
+
+Validation (current working tree):
+
+- `make check`: formatting and optimized size build pass; **75 tests pass**,
+  0 failures, 0 skipped (including aggregate invariant reporting).
+- `make invariant`: both campaigns pass at **256 runs × 128 calls** each;
+  **32,768 calls per campaign**, zero reverts in the valid-action campaign.
+- `forge script script/DeployDSC.s.sol:DeployDSC`: local execution completes;
+  no transactions broadcast.
+- `L06DirectBurnTest` with the override removed: 2 failures, 1 pass;
+  restored implementation: 3 passes.
+- Final Slither command with `--fail-high`: exit 0; archived detector output
+  matches the final scan and source hashes.
+- Relative Markdown links and workflow YAML syntax verified.
+
+Foundry emits optional invariant-configuration probe warnings because the pinned
+older `forge-std` does not implement `targetInterfaces`/`excludeSelectors`. The
+explicit action-selector campaigns still run with the expected call metrics.
+No GitHub-hosted workflow execution is claimed for these local changes.
+
+## 2026-11-02 (UTC) — Earlier hardening session (historical notes)
 
 Context: repo arrived with the core H/M fixes already implemented but
 uncommitted (extended `DSCEngine`, `OracleLib`, mocks, 7 PoC stubs) plus an
