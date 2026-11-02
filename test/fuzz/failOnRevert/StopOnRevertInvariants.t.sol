@@ -55,6 +55,11 @@ contract StopOnRevertInvariants is StdInvariant, Test {
         (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc,) = helperConfig.activeNetworkConfig();
         handler = new StopOnRevertHandler(dsce, dsc);
         targetContract(address(handler));
+        // The engine must never act as a user: a fuzz sender equal to the engine
+        // turns deposits into zero-delta self-transfers, which the
+        // balance-delta crediting (L-04 fix) correctly rejects. fail_on_revert
+        // would count that legitimate revert as an invariant breach.
+        excludeSender(address(dsce));
         // targetContract(address(ethUsdPriceFeed)); Why can't we just do this?
     }
 

@@ -60,6 +60,10 @@ contract ContinueOnRevertInvariants is StdInvariant, Test {
         (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc,) = helperConfig.activeNetworkConfig();
         handler = new ContinueOnRevertHandler(dsce, dsc);
         targetContract(address(handler));
+        // Same reasoning as the stop-on-revert suite: the engine is never a
+        // user, and a sender/engine collision would only exercise a
+        // zero-delta self-transfer that reverts by design.
+        excludeSender(address(dsce));
         // targetContract(address(ethUsdPriceFeed));// Why can't we just do this?
     }
 

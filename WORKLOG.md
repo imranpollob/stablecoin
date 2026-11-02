@@ -51,6 +51,16 @@ untracked `plan.md`. All 65 existing tests passed on Foundry 1.4.1.
    `rm -rf lib` + the four pinned `forge install`s re-registered real
    submodules (gitlinks now committed). `forge fmt` applied to new PoCs;
    final: `fmt --check` clean, **74/74 tests green** (65 existing + 9 new).
+10. **Flaky-invariant incident (same session).** A fresh-clone `forge test`
+    failed once in `StopOnRevertInvariants` (`DSCEngine__TransferFailed` on a
+    single `mintAndDepositCollateral`). Reproduced deterministically: the fuzz
+    `sender` had collided with the engine address, turning the deposit into a
+    zero-delta self-transfer — which the L-04 balance-delta check correctly
+    rejects, and `fail_on_revert` counted as a breach. Fix: `excludeSender
+    (address(dsce))` in both invariant suites (the engine is never a user).
+    Verified at 4× runs (256) green; behavior itself is covered by TempRepro
+    reasoning (since removed). Lesson recorded: every new `received`-style
+    check needs a sender-exclusion review in fail-on-revert suites.
 
 ## Follow-ups (tracked, not done)
 
