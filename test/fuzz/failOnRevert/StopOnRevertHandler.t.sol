@@ -2,13 +2,11 @@
 
 pragma solidity ^0.8.19;
 
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Test } from "forge-std/Test.sol";
 import { ERC20Mock } from "../../mocks/ERC20Mock.sol";
 import { MockV3Aggregator } from "../../mocks/MockV3Aggregator.sol";
-import { DSCEngine, AggregatorV3Interface } from "../../../src/DSCEngine.sol";
+import { DSCEngine } from "../../../src/DSCEngine.sol";
 import { DecentralizedStableCoin } from "../../../src/DecentralizedStableCoin.sol";
-import { console } from "forge-std/console.sol";
 
 /**
  * @title StopOnRevertHandler
@@ -16,8 +14,6 @@ import { console } from "forge-std/console.sol";
  * @dev Provides functions to interact with the protocol during invariant testing
  */
 contract StopOnRevertHandler is Test {
-    using EnumerableSet for EnumerableSet.AddressSet;
-
     DSCEngine public dscEngine;
     DecentralizedStableCoin public dsc;
     MockV3Aggregator public ethUsdPriceFeed;
@@ -112,13 +108,14 @@ contract StopOnRevertHandler is Test {
         }
         amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
         vm.prank(msg.sender);
-        dsc.transfer(to, amountDsc);
+        assertTrue(dsc.transfer(to, amountDsc));
     }
 
     /// @notice Update the price of collateral tokens
     /// @param newPrice New price value for the collateral
     /// @param collateralSeed Seed value to determine which collateral type to update
     function updateCollateralPrice(uint96 newPrice, uint256 collateralSeed) public {
+        newPrice = uint96(bound(newPrice, 1, type(uint96).max));
         int256 intNewPrice = int256(uint256(newPrice));
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
         MockV3Aggregator priceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(collateral)));

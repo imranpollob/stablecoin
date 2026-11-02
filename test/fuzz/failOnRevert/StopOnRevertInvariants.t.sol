@@ -16,7 +16,6 @@ import { HelperConfig } from "../../../script/HelperConfig.s.sol";
 import { DeployDSC } from "../../../script/DeployDSC.s.sol";
 import { ERC20Mock } from "../../mocks/ERC20Mock.sol";
 import { StopOnRevertHandler } from "./StopOnRevertHandler.t.sol";
-import { console } from "forge-std/console.sol";
 
 /**
  * @notice Invariants tested:
@@ -59,7 +58,8 @@ contract StopOnRevertInvariants is StdInvariant, Test {
         // targetContract(address(ethUsdPriceFeed)); Why can't we just do this?
     }
 
-    /// @notice Invariant: Protocol must always have collateral value greater than or equal to total DSC supply (solvency)
+    /// @notice Invariant: Protocol must always have collateral value greater than or equal to total DSC supply
+    /// (solvency)
     function invariant_protocolMustHaveMoreValueThatTotalSupplyDollars() public view {
         uint256 totalSupply = dsc.totalSupply();
         uint256 wethDeposited = ERC20Mock(weth).balanceOf(address(dsce));
@@ -67,9 +67,6 @@ contract StopOnRevertInvariants is StdInvariant, Test {
 
         uint256 wethValue = dsce.getUsdValue(weth, wethDeposited);
         uint256 wbtcValue = dsce.getUsdValue(wbtc, wbtcDeposited);
-
-        console.log("wethValue: %s", wethValue);
-        console.log("wbtcValue: %s", wbtcValue);
 
         assert(wethValue + wbtcValue >= totalSupply);
     }

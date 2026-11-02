@@ -3,7 +3,7 @@
 pragma solidity 0.8.19;
 
 import { DecentralizedStableCoin } from "../../src/DecentralizedStableCoin.sol";
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 
 /**

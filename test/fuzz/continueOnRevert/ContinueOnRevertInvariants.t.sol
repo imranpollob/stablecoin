@@ -63,8 +63,8 @@ contract ContinueOnRevertInvariants is StdInvariant, Test {
         // targetContract(address(ethUsdPriceFeed));// Why can't we just do this?
     }
 
-    /// @notice Invariant: Protocol must always have collateral value greater than or equal to total DSC supply (solvency)
-    /// @dev forge-config: default.invariant.fail-on-revert = false
+    /// @notice Invariant: Protocol must always have collateral value greater than or equal to total DSC supply
+    /// (solvency) @dev forge-config: default.invariant.fail-on-revert = false
     function invariant_protocolMustHaveMoreValueThanTotalSupplyDollars() public view {
         uint256 totalSupply = dsc.totalSupply();
         uint256 wethDeposited = ERC20Mock(weth).balanceOf(address(dsce));

@@ -8,11 +8,10 @@ pragma solidity ^0.8.19;
  * @dev Provides functions to interact with the protocol during invariant testing with continue-on-revert
  */
 
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Test } from "forge-std/Test.sol";
 import { ERC20Mock } from "../../mocks/ERC20Mock.sol";
 import { MockV3Aggregator } from "../../mocks/MockV3Aggregator.sol";
-import { DSCEngine, AggregatorV3Interface } from "../../../src/DSCEngine.sol";
+import { DSCEngine } from "../../../src/DSCEngine.sol";
 import { DecentralizedStableCoin } from "../../../src/DecentralizedStableCoin.sol";
 import { console } from "forge-std/console.sol";
 
@@ -95,7 +94,7 @@ contract ContinueOnRevertHandler is Test {
     function transferDsc(uint256 amountDsc, address to) public {
         amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
         vm.prank(msg.sender);
-        dsc.transfer(to, amountDsc);
+        assertTrue(dsc.transfer(to, amountDsc));
     }
 
     /// @notice Update the price of collateral tokens (sets price to 0 for testing)

@@ -33,7 +33,9 @@ contract DeployDSC is Script {
         vm.startBroadcast(deployerKey);
         DecentralizedStableCoin dsc = new DecentralizedStableCoin();
         DSCEngine dscEngine = new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc));
+        // DSC uses two-step ownership so a bad engine address cannot permanently brick minting.
         dsc.transferOwnership(address(dscEngine));
+        dscEngine.acceptDscOwnership();
         vm.stopBroadcast();
         return (dsc, dscEngine, helperConfig);
     }

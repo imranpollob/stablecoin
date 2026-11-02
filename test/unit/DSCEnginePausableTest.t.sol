@@ -1,166 +1,115 @@
 // SPDX-License-Identifier: MIT
-
 pragma solidity 0.8.19;
 
-import {DeployDSC} from "../../script/DeployDSC.s.sol";
-import {DSCEngine} from "../../src/DSCEngine.sol";
-import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
-import {HelperConfig} from "../../script/HelperConfig.s.sol";
-import {ERC20Mock} from "../mocks/ERC20Mock.sol";
-import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
-import {Test, console} from "forge-std/Test.sol";
-import {StdCheats} from "forge-std/StdCheats.sol";
+import { DeployDSC } from "../../script/DeployDSC.s.sol";
+import { DSCEngine } from "../../src/DSCEngine.sol";
+import { DecentralizedStableCoin } from "../../src/DecentralizedStableCoin.sol";
+import { HelperConfig } from "../../script/HelperConfig.s.sol";
+import { ERC20Mock } from "../mocks/ERC20Mock.sol";
+import { Test } from "forge-std/Test.sol";
 
-contract DSCEnginePausableTest is StdCheats, Test {
-    DSCEngine public dsce;
-    DecentralizedStableCoin public dsc;
-    HelperConfig public helperConfig;
+contract DSCEnginePausableTest is Test {
+    DSCEngine internal engine;
+    DecentralizedStableCoin internal dsc;
+    ERC20Mock internal weth;
 
-    address public ethUsdPriceFeed;
-    address public btcUsdPriceFeed;
-    address public weth;
-    address public wbtc;
-    uint256 public deployerKey;
-
-    uint256 amountCollateral = 10 ether;
-    uint256 amountToMint = 100 ether;
-    address public user = address(1);
+    address internal user = makeAddr("user");
+    address internal guardian = makeAddr("guardian");
+    uint256 internal constant COLLATERAL = 10 ether;
+    uint256 internal constant DEBT = 100 ether;
 
     function setUp() external {
         DeployDSC deployer = new DeployDSC();
-        (dsc, dsce, helperConfig) = deployer.run();
-        (
-            ethUsdPriceFeed,
-            btcUsdPriceFeed,
-            weth,
-            wbtc,
-            deployerKey
-        ) = helperConfig.activeNetworkConfig();
-        if (block.chainid == 31_337) {
-            vm.deal(user, 10 ether);
-        }
-        ERC20Mock(weth).mint(user, 10 ether);
-        ERC20Mock(wbtc).mint(user, 10 ether);
+        HelperConfig config;
+        (dsc, engine, config) = deployer.run();
+        (,, address wethAddress,,) = config.activeNetworkConfig();
+        weth = ERC20Mock(wethAddress);
+        weth.mint(user, COLLATERAL);
+
+        vm.prank(engine.owner());
+        engine.setGuardian(guardian);
     }
 
-    ///////////////////
-    // Pausable Tests
-    ///////////////////
+    function testOwnerAndGuardianCanPauseButOnlyOwnerCanUnpause() public {
+        vm.prank(guardian);
+        engine.pause();
+        assertTrue(engine.paused());
 
-    function testOwnerCanPause() public {
-        vm.prank(dsce.owner());
-        dsce.pause();
-        assertTrue(dsce.paused());
+        vm.prank(guardian);
+        vm.expectRevert("Ownable: caller is not the owner");
+        engine.unpause();
+
+        vm.prank(engine.owner());
+        engine.unpause();
+        assertFalse(engine.paused());
     }
 
-    function testOwnerCanUnpause() public {
-        vm.startPrank(dsce.owner());
-        dsce.pause();
-        dsce.unpause();
+    function testUnauthorizedAccountCannotPause() public {
+        vm.prank(user);
+        vm.expectRevert(DSCEngine.DSCEngine__NotGuardianOrOwner.selector);
+        engine.pause();
+    }
+
+    function testPauseBlocksMintAndWithdrawalButAllowsDepositAndRepayment() public {
+        vm.startPrank(user);
+        weth.approve(address(engine), COLLATERAL);
+        engine.depositCollateralAndMintDsc(address(weth), COLLATERAL, DEBT);
+        dsc.approve(address(engine), DEBT);
         vm.stopPrank();
-        assertFalse(dsce.paused());
+
+        vm.prank(guardian);
+        engine.pause();
+
+        weth.mint(user, 1 ether);
+        vm.startPrank(user);
+        weth.approve(address(engine), 1 ether);
+        engine.depositCollateral(address(weth), 1 ether);
+
+        vm.expectRevert("Pausable: paused");
+        engine.mintDsc(1 ether);
+        vm.expectRevert("Pausable: paused");
+        engine.redeemCollateral(address(weth), 1 ether);
+
+        engine.burnDsc(DEBT);
+        vm.stopPrank();
+
+        (uint256 debt,) = engine.getAccountInformation(user);
+        assertEq(debt, 0);
     }
 
-    function testNonOwnerCannotPause() public {
+    function testRiskChangeRequiresDelayAndExactCalldata() public {
+        address owner = engine.owner();
+        vm.prank(owner);
+        engine.scheduleRiskParameters(40, 8, 1.1 ether);
+
+        (, uint256 readyAt) = engine.getPendingRiskChange();
+        assertEq(readyAt, block.timestamp + engine.RISK_CHANGE_DELAY());
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__RiskChangeNotReady.selector, readyAt));
+        engine.executeRiskParameters(40, 8, 1.1 ether);
+
+        vm.warp(readyAt);
+        vm.prank(owner);
+        vm.expectRevert(DSCEngine.DSCEngine__RiskChangeMismatch.selector);
+        engine.executeRiskParameters(41, 8, 1.1 ether);
+
+        vm.prank(owner);
+        engine.executeRiskParameters(40, 8, 1.1 ether);
+        assertEq(engine.getLiquidationThreshold(), 40);
+        assertEq(engine.getLiquidationBonus(), 8);
+        assertEq(engine.getMinHealthFactor(), 1.1 ether);
+    }
+
+    function testRiskBoundsRejectMassLiquidationConfiguration() public {
+        vm.prank(engine.owner());
+        vm.expectRevert(DSCEngine.DSCEngine__InvalidParameter.selector);
+        engine.scheduleRiskParameters(1, 50, type(uint256).max);
+    }
+
+    function testNonOwnerCannotScheduleRiskChange() public {
         vm.prank(user);
         vm.expectRevert("Ownable: caller is not the owner");
-        dsce.pause();
-    }
-
-    function testCannotDepositWhenPaused() public {
-        vm.prank(dsce.owner());
-        dsce.pause();
-
-        vm.startPrank(user);
-        ERC20Mock(weth).approve(address(dsce), amountCollateral);
-        vm.expectRevert("Pausable: paused");
-        dsce.depositCollateral(weth, amountCollateral);
-        vm.stopPrank();
-    }
-
-    function testCannotMintWhenPaused() public {
-        // 1. Unpause (default is unpaused), deposit collateral
-        vm.startPrank(user);
-        ERC20Mock(weth).approve(address(dsce), amountCollateral);
-        dsce.depositCollateral(weth, amountCollateral);
-        vm.stopPrank();
-
-        // 2. Pause
-        vm.prank(dsce.owner());
-        dsce.pause();
-
-        // 3. Try to mint
-        vm.startPrank(user);
-        vm.expectRevert("Pausable: paused");
-        dsce.mintDsc(amountToMint);
-        vm.stopPrank();
-    }
-
-    ///////////////////
-    // Dynamic Parameter Tests
-    ///////////////////
-
-    function testOwnerCanUpdateLiquidationThreshold() public {
-        uint256 newThreshold = 60;
-        vm.prank(dsce.owner());
-        dsce.setLiquidationThreshold(newThreshold);
-        assertEq(dsce.getLiquidationThreshold(), newThreshold);
-    }
-
-    function testOwnerCanUpdateLiquidationBonus() public {
-        uint256 newBonus = 20;
-        vm.prank(dsce.owner());
-        dsce.setLiquidationBonus(newBonus);
-        assertEq(dsce.getLiquidationBonus(), newBonus);
-    }
-
-    function testOwnerCanUpdateMinHealthFactor() public {
-        uint256 newHealthFactor = 0.5 ether;
-        vm.prank(dsce.owner());
-        dsce.setMinHealthFactor(newHealthFactor);
-        assertEq(dsce.getMinHealthFactor(), newHealthFactor);
-    }
-
-    function testNonOwnerCannotUpdateParameters() public {
-        vm.startPrank(user);
-        vm.expectRevert("Ownable: caller is not the owner");
-        dsce.setLiquidationThreshold(60);
-        vm.stopPrank();
-    }
-
-    function testInvalidLiquidationThresholdReverts() public {
-        vm.startPrank(dsce.owner());
-        vm.expectRevert(DSCEngine.DSCEngine__InvalidParameter.selector);
-        dsce.setLiquidationThreshold(100);
-        vm.stopPrank();
-    }
-
-    function testUpdateUseNewParametersForHealthFactor() public {
-        // 1. User deposits collateral and mints DSC near the limit
-        vm.startPrank(user);
-        ERC20Mock(weth).approve(address(dsce), amountCollateral);
-        // Mint max possible roughly
-        // Collateral = $20,000 (10 ETH * 2000)
-        // Threshold = 50% => $10,000 capacity
-        // Mint $10,000
-        uint256 maxMint = 10000 ether;
-        dsce.depositCollateralAndMintDsc(weth, amountCollateral, maxMint);
-
-        uint256 hfBefore = dsce.getHealthFactor(user);
-        // Should be exactly 1e18
-        assertEq(hfBefore, 1e18);
-        vm.stopPrank();
-
-        // 2. Owner lowers threshold to 40% (meaning you need 2.5x collateral, or only 40% of collateral counts)
-        // Previous: $20,000 * 0.50 = $10,000 adjusted value. Debt $10,000. HF = 1.0.
-        // New: $20,000 * 0.40 = $8,000 adjusted value. Debt $10,000. HF = 0.8. (Debt > Adjusted Collateral)
-        // HF Formula: (AdjCollateral * 1e18) / Debt
-        // (8,000 * 1e18) / 10,000 = 0.8e18
-        vm.prank(dsce.owner());
-        dsce.setLiquidationThreshold(40);
-
-        // 3. User should now be liquidatable (broken health factor)
-        uint256 hfAfter = dsce.getHealthFactor(user);
-        assertEq(hfAfter, 0.8 ether);
+        engine.scheduleRiskParameters(40, 8, 1 ether);
     }
 }

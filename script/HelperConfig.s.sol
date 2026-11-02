@@ -23,11 +23,11 @@ contract HelperConfig is Script {
 
     /// @notice Structure containing network-specific configuration
     struct NetworkConfig {
-        address wethUsdPriceFeed;  // Chainlink price feed for WETH/USD
-        address wbtcUsdPriceFeed;  // Chainlink price feed for WBTC/USD
-        address weth;              // WETH token address
-        address wbtc;              // WBTC token address
-        uint256 deployerKey;       // Private key of the deployer
+        address wethUsdPriceFeed; // Chainlink price feed for WETH/USD
+        address wbtcUsdPriceFeed; // Chainlink price feed for WBTC/USD
+        address weth; // WETH token address
+        address wbtc; // WBTC token address
+        uint256 deployerKey; // Private key of the deployer
     }
 
     /// @notice Default private key for Anvil network deployment
@@ -35,9 +35,11 @@ contract HelperConfig is Script {
 
     /// @notice Constructor that sets the appropriate network configuration based on chain ID
     constructor() {
-        if (block.chainid == 11_155_111) { // Sepolia network
+        if (block.chainid == 11_155_111) {
+            // Sepolia network
             activeNetworkConfig = getSepoliaEthConfig();
-        } else { // Default to Anvil
+        } else {
+            // Default to Anvil
             activeNetworkConfig = getOrCreateAnvilEthConfig();
         }
     }

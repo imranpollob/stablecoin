@@ -3,7 +3,7 @@
 pragma solidity 0.8.19;
 
 import { MockV3Aggregator } from "../mocks/MockV3Aggregator.sol";
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 import { OracleLib, AggregatorV3Interface } from "../../src/libraries/OracleLib.sol";
 
@@ -27,7 +27,7 @@ contract OracleLibTest is StdCheats, Test {
     /// @notice Tests that the timeout value is returned correctly
     function testGetTimeout() public {
         uint256 expectedTimeout = 3 hours;
-        assertEq(OracleLib.getTimeout(AggregatorV3Interface(address(aggregator))), expectedTimeout);
+        assertEq(OracleLib.getTimeout(), expectedTimeout);
     }
 
     /// @notice Tests that staleCheckLatestRoundData reverts when price data is stale
@@ -35,19 +35,29 @@ contract OracleLibTest is StdCheats, Test {
         vm.warp(block.timestamp + 4 hours + 1 seconds);
         vm.roll(block.number + 1);
 
-        vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OracleLib.OracleLib__StalePrice.selector, block.timestamp - 4 hours - 1 seconds, 3 hours
+            )
+        );
         AggregatorV3Interface(address(aggregator)).staleCheckLatestRoundData();
     }
 
-    /// @notice Tests that staleCheckLatestRoundData reverts when answeredInRound is invalid
-    function testPriceRevertsOnBadAnsweredInRound() public {
-        uint80 _roundId = 0;
-        int256 _answer = 0;
-        uint256 _timestamp = 0;
-        uint256 _startedAt = 0;
+    /// @notice Tests that a feed cannot report an observation from the future.
+    function testPriceRevertsOnFutureTimestamp() public {
+        uint80 _roundId = 2;
+        int256 _answer = INITAL_PRICE;
+        uint256 _timestamp = block.timestamp + 1;
+        uint256 _startedAt = block.timestamp;
         aggregator.updateRoundData(_roundId, _answer, _timestamp, _startedAt);
 
-        vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
+        vm.expectRevert(abi.encodeWithSelector(OracleLib.OracleLib__StalePrice.selector, block.timestamp + 1, 3 hours));
+        AggregatorV3Interface(address(aggregator)).staleCheckLatestRoundData();
+    }
+
+    function testPriceRevertsWhenAnswerIsNegative() public {
+        aggregator.updateAnswer(-1);
+        vm.expectRevert(abi.encodeWithSelector(OracleLib.OracleLib__InvalidPrice.selector, int256(-1)));
         AggregatorV3Interface(address(aggregator)).staleCheckLatestRoundData();
     }
 }
