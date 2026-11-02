@@ -1,4 +1,5 @@
-lib/
+# NOTE: lib/ intentionally NOT ignored — submodule gitlinks are committed so a
+# fresh clone builds (see Phase 0 of plan.md).
 
 # Compiler files
 cache/

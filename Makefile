@@ -15,10 +15,10 @@ all: clean remove install update build
 # Clean the repo
 clean  :; forge clean
 
-# Remove modules
-remove :; rm -rf .gitmodules && rm -rf .git/modules/* && rm -rf lib && touch .gitmodules && git add . && git commit -m "modules"
+# Remove modules (destructive: unregisters submodules; never auto-commits)
+remove :; rm -rf lib && rm -f .gitmodules && git rm --cached -r --quiet lib 2>/dev/null || true
 
-install :; forge install cyfrin/foundry-devops@0.1.0 --no-commit && forge install smartcontractkit/chainlink-brownie-contracts@0.6.1 --no-commit && forge install foundry-rs/forge-std@v1.5.3 --no-commit && forge install openzeppelin/openzeppelin-contracts@v4.8.3 --no-commit
+install :; forge install cyfrin/foundry-devops@0.1.0 && forge install smartcontractkit/chainlink-brownie-contracts@0.6.1 && forge install foundry-rs/forge-std@v1.5.3 && forge install openzeppelin/openzeppelin-contracts@v4.8.3
 
 # Update Dependencies
 update:; forge update
