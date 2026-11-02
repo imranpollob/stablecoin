@@ -1,121 +1,78 @@
-# Decentralized Stablecoin (DSC)
+# DSC Stablecoin — Security Research Case Study
 
-A decentralized, algorithmic stablecoin pegged to USD and backed by cryptocurrency collateral. This project implements a MakerDAO-inspired protocol with enhanced security features and oracle protection.
+> I took a well-known codebase, extended it, then audited it like a client
+> engagement. This repo contains the findings, PoCs that fail on the vulnerable
+> tag, fixes, and the property-based suite that would have caught every bug.
 
-## Overview
+**Original:** Cyfrin Updraft `foundry-defi-stablecoin` course project (script
+headers credit Patrick Collins). **Mine:** the hardening, the self-audit, and
+every test under `test/poc/`. See [`plan.md`](plan.md) for the full roadmap,
+[`audits/self-audit-v0.md`](audits/self-audit-v0.md) for the report, and
+[`WORKLOG.md`](WORKLOG.md) for the build log.
 
-The Decentralized Stablecoin system maintains a 1:1 peg with the US Dollar through overcollateralization with crypto assets (WETH and WBTC). The protocol is designed to be minimal, transparent, and entirely algorithmic with no governance.
+## Findings (all Highs/Mediums fixed)
 
-## Core Features
+| ID | Title | Severity | PoC |
+|----|-------|----------|-----|
+| H-01 | Liquidation bricked below (100 + bonus)% collateralization; bad debt uncleanable | High | [`H01_LiquidationUnderflow`](test/poc/H01_LiquidationUnderflow.t.sol) |
+| H-02 | Price math assumed 18-decimal tokens / 8-decimal feeds (WBTC off by 1e10) | High | [`H02_CollateralDecimals`](test/poc/H02_CollateralDecimals.t.sol) |
+| M-01 | Pause trapped users and blocked liquidators | Medium | [`M01_AsymmetricPause`](test/poc/M01_AsymmetricPause.t.sol) |
+| M-02 | Instant, unbounded risk-parameter changes (mass-liquidation rug) | Medium | [`M02_RiskTimelock`](test/poc/M02_RiskTimelock.t.sol) |
+| M-03 | Oracle gaps: no `price > 0`, one global heartbeat | Medium | [`M03_OracleValidation`](test/poc/M03_OracleValidation.t.sol) |
+| M-04 | One stale feed froze every user | Medium | [`M04_UnusedStaleFeed`](test/poc/M04_UnusedStaleFeed.t.sol) |
+| L-01 | Two settlement paths lacked `nonReentrant` | Low | [`L01_ReentrancyGuard`](test/poc/L01_ReentrancyGuard.t.sol) |
+| L-03 | Constructor accepted duplicates / zero addresses | Low | [`L03_ConstructorValidation`](test/poc/L03_ConstructorValidation.t.sol) |
+| L-04 | Fee-on-transfer credited by nominal amount | Low | [`L04_FeeOnTransferAccounting`](test/poc/L04_FeeOnTransferAccounting.t.sol) |
+| L-05 | Single-step ownership | Low | [`L05_TwoStepOwnership`](test/poc/L05_TwoStepOwnership.t.sol) |
+| I-01 | Health-factor rounding direction | Info | [`I01_HealthFactorPrecision`](test/poc/I01_HealthFactorPrecision.t.sol) |
 
-### Stablecoin Characteristics
-- **Exogenous Collateral**: Backed by external crypto assets (WETH, WBTC)
-- **Dollar Pegged**: Maintains 1 DSC = $1 USD value
-- **Algorithmic Stability**: Decentralized minting mechanism
-- **Overcollateralized**: Requires 200% collateralization ratio
+Accepted risk: L-02 (no minimum-debt/close factor), L2 sequencer checks, and
+fallback oracles — documented in [`docs/threat-model.md`](docs/threat-model.md).
 
-### Protocol Features
+Key design changes: bad-debt ledger (`s_badDebt` + `BadDebtRealized`) instead of
+reverting liquidations; asymmetric pause (repay/deposit/liquidate stay open);
+48h timelocked risk changes with bounds + coupling check; per-collateral
+decimals and heartbeats; `Ownable2Step` throughout.
 
-#### Collateral Management
-- Deposit and withdraw supported collateral tokens (WETH/WBTC)
-- Real-time USD value tracking via Chainlink price feeds
-- Flexible collateral types with configurable price oracles
-
-#### Minting & Burning
-- Mint DSC tokens against deposited collateral
-- Burn DSC to reduce debt or close positions
-- Combined operations: deposit collateral and mint DSC in single transaction
-- Redeem collateral by burning DSC
-
-#### Liquidation System
-- Automated liquidation of undercollateralized positions
-- 10% liquidation bonus for liquidators
-- Partial liquidation support
-- Health factor monitoring to prevent insolvency
-
-#### Security Features
-- **Stale Price Protection**: Oracle library checks for stale Chainlink data (3-hour timeout)
-- **Pausable**: Emergency pause functionality for admin
-- **ReentrancyGuard**: Protection against reentrancy attacks
-- **Health Factor**: Continuous solvency monitoring
-
-#### Admin Controls
-- Adjustable liquidation threshold
-- Configurable liquidation bonus
-- Customizable minimum health factor
-- Pause/unpause protocol operations
-
-## Technical Architecture
-
-### Smart Contracts
-
-- **DecentralizedStableCoin.sol**: ERC20 token contract with controlled minting/burning
-- **DSCEngine.sol**: Core protocol logic for collateral management, minting, and liquidations
-- **OracleLib.sol**: Chainlink oracle wrapper with staleness checks
-
-### Testing Suite
-
-- **Unit Tests**: Comprehensive tests for core functionality
-- **Fuzz Tests**: Invariant testing with continue-on-revert and fail-on-revert handlers
-- **Mock Contracts**: Complete suite of mocks for isolated testing
-
-## Technology Stack
-
-- **Solidity 0.8.19**: Smart contract development
-- **Foundry**: Development framework and testing
-- **OpenZeppelin**: Battle-tested contract libraries
-- **Chainlink**: Decentralized price oracles
-
-## Getting Started
-
-### Prerequisites
-
-- [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Git
-
-### Installation
-
-```bash
-git clone <repository-url>
-cd stablecoin
-forge install
-```
-
-### Build
+## Test suite
 
 ```bash
 forge build
+forge test                                    # unit + PoC + invariants (fail & continue-on-revert)
+forge test --match-path "test/poc/*"          # one regression test per finding
+forge fmt --check && forge build --sizes
 ```
 
-### Test
+Static analysis: Slither reports zero High/Medium/Low (20 info-level notes,
+each triaged in [`audits/static-analysis.md`](audits/static-analysis.md)).
+Properties spec: [`docs/properties.md`](docs/properties.md). Architecture and
+liquidation flow: [`docs/architecture.md`](docs/architecture.md).
+
+## Getting started
+
+Prerequisites: [Foundry](https://book.getfoundry.sh/getting-started/installation), Git.
 
 ```bash
-# Run all tests
+git clone --recurse-submodules <repository-url>
+cd stablecoin
+forge build
 forge test
-
-# Run with verbosity
-forge test -vvv
-
-# Run specific test file
-forge test --match-path test/unit/DSCEngineTest.t.sol
 ```
 
-### Deploy
+Submodules are committed as gitlinks, so a fresh clone builds. Deploy:
 
 ```bash
-# Deploy to local network
-forge script script/DeployDSC.s.sol
-
-# Deploy to testnet
+forge script script/DeployDSC.s.sol                          # local (anvil)
 forge script script/DeployDSC.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 ```
 
-## Security Considerations
+Tags: `v0-vulnerable` (pre-fix baseline — every PoC fails here), `v1-fixed`.
 
-- Always maintain overcollateralization to avoid liquidation
-- Monitor health factor regularly
-- Be aware of price volatility in collateral assets
-- Oracle staleness can freeze the protocol (by design)
+## What this demonstrates
+
+Auditing my own code: two Highs I reproduced and fixed, with the invariant
+suite (`collateral value ≥ total DSC`, non-reverting getters, liquidatability)
+that would have caught them. Interview walkthroughs in `plan.md` §5.
 
 ## License
 

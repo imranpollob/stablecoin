@@ -11,8 +11,7 @@ out/
 /broadcast/**/dry-run/
 /broadcast
 
-# Docs
-docs/
+# Docs are part of the deliverable (properties, threat model, architecture).
 
 # Dotenv file
 .env
